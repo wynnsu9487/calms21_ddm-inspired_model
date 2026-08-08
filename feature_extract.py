@@ -13,33 +13,53 @@ import math
 import matplotlib.pyplot as plt
 import time
 
-'''
-Processing features
-'''
+#Process and extract features from video coordinates
+#Classes analyze_mount, analyze_attack
 
-#redirect
+#NOTE: bouts are analyzed individually.
+#This is more appropriate given that I want to distinct features between them.
+
+#Redirect
 os.chdir('/Users/wynnsu/Downloads/DeepLabCut/notebook_h5_csv')
 
-#open and load the JSON file
+#Open and load the JSON file
 with open('calms21_task1_train.json', 'r') as file:
     data_train = json.load(file)
 with open('calms21_task1_test.json','r') as file:
     data_test = json.load(file)
 
-
 # =============================================================================
-# Analyze Mount - specifically displays feature distributions for mount
+# Analyze Mount
 # =============================================================================
 
 class analyze_mount:
+    '''
+    An instance represents a video to be analyzed for mounting behaviors
+    
+    Instant attributes:
+        vid_id: (str) video number/id
+        data_train: (dict) xy coordinates from both mice, from all videos for training
+        data_test:  (dict) xy coordinates from both mice, from all videosfor testing
+        classific:  (dict) annotated classifications from all frames of all videos
+        coor_intr:  (dict) coordinates from intruder
+        coor_resi:  (dict) coordinates from resident
+    '''
     
     # =============================================================================
-    # Initializing - naming commonly used variables
+    # Initializing & Processing
     # =============================================================================
     
     def __init__(self,vid_id,data_train,data_test):
+        '''
+        Initializes an instance of analyze_mount.
+
+        Parameters:
+            vid_id: (str) video number/id
+            data_train: (dict) xy coordinates from both mice, from all videosfor training
+            data_test:  (dict) xy coordinates from both mice, from all videosfor training
+        '''
         
-        #modify video id
+        #Modifies video id
         if len(vid_id) == 1:
             self.vid_id = '00'+vid_id
             
@@ -49,7 +69,7 @@ class analyze_mount:
         self.data_train = data_train
         self.data_test = data_test
         
-        #convert dictionary to numpy array
+        #Converts dictionary to numpy array (and inverts it)
         if int(vid_id) <= 70:
             self.classific = self.conv_classific_n_coor("train")[0] #train videos
             self.coor_intr = self.invert_y(self.conv_classific_n_coor("train")[1])
@@ -63,30 +83,34 @@ class analyze_mount:
             
     def conv_classific_n_coor(self,data):
         '''
-        convert classification and xy coordinates in dictionary to numpy array 
+        Converts classification and xy coordinates from dictionary to numpy array 
+        
+        Parameter:
+            data: (str) indicates videos dataset for either training or testing
         '''
         
+        #stores classification and coordinates from a specific video
         if data == "train":
             np_classific = np.array(self.data_train['annotator-id_0']['task1/train/mouse'+self.vid_id+'_task1_annotator1']['annotations'])+1
-            coor_intr = np.array(self.data_train['annotator-id_0']['task1/train/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,0,:,:]
-            coor_resi = np.array(self.data_train['annotator-id_0']['task1/train/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,1,:,:]
+            coor_intr    = np.array(self.data_train['annotator-id_0']['task1/train/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,0,:,:]
+            coor_resi    = np.array(self.data_train['annotator-id_0']['task1/train/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,1,:,:]
         elif data == "test":
-            np_classific = np.array(self.data_test['annotator-id_0']['task1/train/mouse'+self.vid_id+'_task1_annotator1']['annotations'])+1
-            coor_intr = np.array(self.data_test['annotator-id_0']['task1/train/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,0,:,:]
-            coor_resi = np.array(self.data_test['annotator-id_0']['task1/train/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,1,:,:]
+            np_classific = np.array(self.data_test['annotator-id_0']['task1/test/mouse'+self.vid_id+'_task1_annotator1']['annotations'])+1
+            coor_intr    = np.array(self.data_test['annotator-id_0']['task1/test/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,0,:,:]
+            coor_resi    = np.array(self.data_test['annotator-id_0']['task1/test/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,1,:,:]
         
         return (np_classific,coor_intr,coor_resi)
 
     def pre_mount(self):
         '''
-        find whether there was investigation before mount
+        Identifies frames when there was investigation before mount
         '''
     
         lst_frame = []
-        #iterate the array
+        #Iterates the array
         for each in range (1,len(self.classific)):
             
-        #for every segment of mounting, check if there was an investigation happened before
+            #Checks if there was an investigation happened before
             if self.classific[each-1] == 2 and self.classific[each] == 3:
                 lst_frame.append(each)
         
@@ -94,11 +118,15 @@ class analyze_mount:
     
     def bout_end(self):
         '''
-        find the frame when bout ends
+        Finds and returns frames when a mount bout ends
         '''
+        
         lst_frame = []
-        #iterate the array
+        
+        #Iterates the array
         for each in range(1,len(self.classific)):
+            
+            #Checks if investigation ended
             if self.classific[each-1] == 3 and self.classific[each] != 3:
                 lst_frame.append(each)
         
@@ -106,46 +134,54 @@ class analyze_mount:
     
     def invert_y(self,np_coor):
         '''
-        inversion of y-coordinates for more intuitive calculations
+        Inverts y-coordinates for more intuitive calculations
+        
+        Parameter:
+            np_coor: (numpy array) coordinates from either intruder or resident
         '''
         np_coor[:,1,:] = np.abs(np_coor[:,1,:] - 570)
         
         return np_coor
     
     # =============================================================================
-    # Helper functions - extract simple features
+    # Helper functions
     # =============================================================================
     
     def centroid_all(self,frame,np_coor):
         '''
-        input is a mouse xy coordinate for all body parts and a specific frame
+        Calculates centroids based on all body parts from one mouse
         
-        calculates centroids based on all body parts
-    
-        returns a tuple with 2 elements, indicating centroid's xy coordinate of a single frame
+        Parameter:
+            frame: (type) description
+            np_coor: (type) description
         '''
         centroid_all_x = sum(np_coor[frame,0,:])/len(np_coor[frame,0,:])
         centroid_all_y = sum(np_coor[frame,1,:])/len(np_coor[frame,1,:])
     
+        #Returns tuple with 2 elements, centroid's xy coordinate of a single frame
         return (centroid_all_x,centroid_all_y)
 
     def centroid_spec(self,frame,np_coor):
         '''
-        input is a mouse xy coordinate for specific body parts and a specific frame
+        Calculates centroids based on specific body parts
         
-        calculates centroids based on specific body parts
-    
-        returns a tuple with 2 elements, indicating the centroid's xy coordinate of a single frame
+        Parameter:
+            frame: (int) a specific frame in the video
+            np_coor: (numpy array) coordinates for either resident or intruder
         '''
         centroid_x = sum(np_coor[:,frame,0])/len(np_coor[:,frame,0])
         centroid_y = sum(np_coor[:,frame,1])/len(np_coor[:,frame,1])
     
+        #Returns tuple with 2 elements, centroid's xy coordinate of a single frame
         return (centroid_x,centroid_y)
     
     def dist(self,point1,point2):
         '''
-        calculates the distance between two points
-        each point consists of x and y coordinate
+        Calculates the distance between two points
+        
+        Parameter:
+            point1: (list or numpy array) consists of xy coordinates
+            point2: (list or numpy array) consists of xy coordinates
         '''
         x = point2[0] - point1[0]
         y = point2[1] - point1[1]
@@ -153,16 +189,29 @@ class analyze_mount:
         return np.sqrt(x**2 + y**2)
     
     def dot_prod(self,v1,v2):
+        '''
+        Calculates dot product of two vectors
+        
+        Parameter:
+            v1: (list) a vector with xy components
+            v2: (list) a vector with xy components
+        '''
         
         return v1[0]*v2[0] + v1[1]*v2[1]
     
     def angle_btw_lines(self,resi_nose,resi_neck,intr,add_intr=None):
         """
-        three inputs: resident nose & neck & either intruder's centroid or hipL or hipR
-        calculates the smallest angle (in degrees) between two lines
-        each line is defined by two points: ((x1, y1), (x2, y2))
-    
-        four inputs: resident nose & neck AND intruder neck & centroid
+        Calculates the smallest angle (in degrees) between two lines;
+        Each line has two points, with one point from each line possibly overlapping
+        
+        Parameter:
+            resi_nose: (numpy array) coordinates of resident's nose
+            resi_neck: (numpy array) coordinates of resident's neck
+            intr:      (numpy array) coordinates from one of intruder's body part
+            add_intr:  (numpy array) optional coordinates from another intruder's body part
+            
+        Three inputs: resident nose & neck & either intruder's centroid or hipL or hipR
+        Four inputs: resident nose & neck AND intruder neck & centroid
         """
     
         if add_intr is None:
@@ -206,6 +255,13 @@ class analyze_mount:
             return angle_degree
         
     def count_match(self,match,arr):
+        '''
+        Counts how many elements in arr matches the string.
+        
+        Parameter:
+            match: (str) any string (eg. True_Head) 
+            arr:   (numpy array) matrix containing string
+        '''
         
         count = 0
         row,col = np.shape(arr)
@@ -223,27 +279,61 @@ class analyze_mount:
         
     def get_pre_onset(self,frame_of_interest):
         '''
-        for every bout frame, go 30 frames before that bout.
-        return a list of 30 frames before a specific frame
+        Return a list of 30 frames before a specific frame
+        
+        Parameter:
+            frame_of_interest:  (int) a frame when behavior transition happens
         '''
-    
+        #Given a bout frame, go 30 frames before that bout.
         if frame_of_interest-30 < 0:
             return None
         return np.arange(frame_of_interest-30,frame_of_interest)
+    
+    def contact_region_numb(self,frame_of_interest,np_coor_resi,np_coor_intr):
+        '''
+        Calculates distance and angles betweeen specific body parts of two mice
+        
+        Parameter:
+            frame_of_interest: (int) a frame when behavior transition happens
+            np_coor_resi:      (numpy array) coordinates from resident
+            np_coor_intr:      (numpy array) coordiantes from intruder
+        '''
+        
+        resi_nose = np_coor_resi[frame_of_interest,:,0]
+        resi_neck = np_coor_resi[frame_of_interest,:,3]
+    
+        intr_centroid_head = self.centroid_spec(frame_of_interest,np.array([np_coor_intr[:,:,0],np_coor_intr[:,:,1],np_coor_intr[:,:,2],np_coor_intr[:,:,3]]))
+        intr_centroid_all =  self.centroid_all(frame_of_interest,np_coor_intr)
+        intr_hipL = np_coor_intr[frame_of_interest,:,4]
+        intr_hipR = np_coor_intr[frame_of_interest,:,5]
+        intr_tail = np_coor_intr[frame_of_interest,:,6]
+        
+        nose_head = [self.dist(resi_nose,intr_centroid_head),self.angle_btw_lines(resi_nose,resi_neck,intr_centroid_head)]
+        nose_hipL = [self.dist(resi_nose,intr_hipL),         self.angle_btw_lines(resi_nose,resi_neck,intr_hipL)]
+        nose_hipR = [self.dist(resi_nose,intr_hipR),         self.angle_btw_lines(resi_nose,resi_neck,intr_hipR)]
+        nose_cent = [self.dist(resi_nose,intr_centroid_all), self.angle_btw_lines(resi_nose,resi_neck,intr_centroid_all)]
+        nose_tail = [self.dist(resi_nose,intr_tail),         self.angle_btw_lines(resi_nose,resi_neck,intr_centroid_all)]
+
+        #array w/ shape (5,2), where rows are the 5 variables, columns consists of dist & angle
+        return np.array([nose_head,nose_hipL,nose_hipR,nose_cent,nose_tail])
         
     
     #contact region relative to intruder - where resident's head is oriented on intruder's body
     def contact_region(self,frame_of_interest,np_coor_resi,np_coor_intr):
         '''
-        input a 1D numpy array that indicates when either attack or investigation happened
-        checks the T-shape
-        returns elements {True_Head,True_Centroid,True_Hip,True_Tail,None}
+        Checks whether resident is facing & in proximity with a body part of intruder;
+        Returns elements {True_Head,True_Centroid,True_Hip,True_Tail,None}
+        
+        Parameter:
+            frame_of_interest: (int) a frame when behavior transition happens
+            np_coor_resi:      (numpy array) coordinates from resident
+            np_coor_intr:      (numpy array) coordiantes from intruder
         '''
         resi_nose = np_coor_resi[frame_of_interest,:,0]
         resi_neck = np_coor_resi[frame_of_interest,:,3]
     
         intr_centroid_head = self.centroid_spec(frame_of_interest,np.array([np_coor_intr[:,:,0],np_coor_intr[:,:,1],np_coor_intr[:,:,2],np_coor_intr[:,:,3]]))
-        intr_centroid_all = self.centroid_all(frame_of_interest,np_coor_intr)
+        intr_centroid_all =  self.centroid_all(frame_of_interest,np_coor_intr)
         intr_hipL = np_coor_intr[frame_of_interest,:,4]
         intr_hipR = np_coor_intr[frame_of_interest,:,5]
         intr_tail = np_coor_intr[frame_of_interest,:,6]
@@ -278,6 +368,18 @@ class analyze_mount:
     ratio ≈ 1) indicate disbalance.
     '''
     def s_matrix(self,frame_of_interest,np_coor_resi,np_coor_intr):
+        '''
+        Calculates symmetry ratio, given coordinates of two mice.
+        
+        S-matrices (symmetry ratio ≈ 0) indicate balanced head-body-tail
+        (HBT) interaction, e.g., mice maintain similar distances between HBT,
+        whereas asymmetric S-matrices (symmetry ratio ≈ 1) indicate disbalance.
+        
+        Parameter:
+            frame_of_interest: (int) a frame when behavior transition happens
+            np_coor_resi:      (numpy array) coordinates from resident
+            np_coor_intr:      (numpy array) coordiantes from intruder
+        '''
     
         #0: nose-ears-neck centroids (or only nose)
         #1: centroid of all body parts
@@ -312,7 +414,12 @@ class analyze_mount:
     
     def facing_angle(self,frame_of_interest,np_coor_resi,np_coor_intr):
         '''
-        returns angle between resident's heading direction & intruder's centroid
+        Returns angle between resident's heading direction & intruder's centroid
+        
+        Parameter:
+            frame_of_interest: (int) a frame when behavior transition happens
+            np_coor_resi:      (numpy array) coordinates from resident
+            np_coor_intr:      (numpy array) coordiantes from intruder
         '''
         #coordinates during the frame of interest
         fr_resi_nose = np_coor_resi[frame_of_interest,:,0]
@@ -327,15 +434,25 @@ class analyze_mount:
     
     def time_since_last_bout(self,prev_bout,curr_frame):
         '''
-        Time-since-last-bout as urgency/noise term
+        Returns how long since the last bout has ended
     
         Hypothesis: time since last bout predicts escalation
+        (ie Time-since-last-bout as noise term)
+        
+        Parameter:
+            prev_bout:  (int) the frame when previous bout ends
+            curr_frame: (int) the current
         '''
         return curr_frame - prev_bout
     
     def visual_cone(self,frame_of_interest,np_coor_resi,np_coor_intr): 
         '''
-        ±45° cone toward intruder's centroid of head or body
+        Indicates if intruder is within resident ±45° cone (like a vision field)
+        
+        Parameter:
+            frame_of_interest: (int) a frame when behavior transition happens
+            np_coor_resi:      (numpy array) coordinates from resident
+            np_coor_intr:      (numpy array) coordiantes from intruder
         '''
         #key parts
         intr_centroid_head = self.centroid_spec(frame_of_interest,np.array([np_coor_intr[:,:,0],np_coor_intr[:,:,1],np_coor_intr[:,:,2],np_coor_intr[:,:,3]]))
@@ -365,7 +482,14 @@ class analyze_mount:
     # Display distributions
     # =============================================================================
     
-    def disp_distribution(self):
+    def stats_arr(self,graph=True):
+        '''
+        Calculates all main features
+        Optionally graphs the features as a function of 30 frame 
+        
+        Parameter:
+            graph: (bool) shows feature graphs or not.
+        '''
 
         #for each frame in gap, store all 30 frames before the frame in a list -> get_pre_onset ()
         lst_frames_vid = []
@@ -403,72 +527,88 @@ class analyze_mount:
                 vid_stats[5,sec_ind,thi_ind] = v_c_b
                 thi_ind = thi_ind + 1
             sec_ind = sec_ind + 1
+            
+        if graph == True:
         
-        ###display distributions across those 30 frames 
+            ###display distributions across those 30 frames 
+            
+            #contact_region()
+            plt.figure(1)
+            #x = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
+            x = ["True_Head","True_Hip","True_Centroid","True_Tail"] #TODO change this (or not)
+            y = np.zeros(4)
+            
+            for i in range(len(y)):
+                y[i] = self.count_match(x[i],vid_stats[0])  
+            plt.title(f'MOUNT: contact region, video {self.vid_id}')
+            plt.bar(x,y)
+            plt.show()
+            
+            #s_matrix()
+            plt.figure(2)
+            for i in range(len(lst_frames_vid)): 
+                plt.plot(np.arange(0,30),vid_stats[1,i,:],label=f'frame {mount_gap[i]}')
+            
+            plt.title(f'MOUNT: pre-transition frames vs. sym_ratio, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='upper left')
+            plt.show()
+            
+            #facing_angle()
+            plt.figure(3)
+            for i in range(len(lst_frames_vid)):
+                plt.plot(np.arange(0,30),vid_stats[2,i,:],label=f'frame {mount_gap[i]}')
+            plt.title(f'MOUNT: pre-transition frames vs. facing angle, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='upper left')
+            plt.show()
+            
+            #time_since_last_bout()
+            plt.figure(4)
+            plt.hist(vid_stats[3,:,-1])
+            plt.title(f'MOUNT: freuqnecy distribution of time since last bout, video {self.vid_id}')
+            plt.show()
+            
+            #visual_cone()
+            plt.figure(5)
+            threshold = np.cos(np.deg2rad(45))
+            plt.axhline(y=threshold,color='r',linestyle='--',label='45° cone')
+            
+            for i in range(len(lst_frames_vid)):
+                plt.plot(np.arange(0,30),vid_stats[4,i,:],color='b',label=f'frame {mount_gap[i]}')
+                plt.plot(np.arange(0,30),vid_stats[5,i,:],color='g')
+            plt.ylim(-1.05, 1.05)
+            plt.xlabel("Frame")
+            plt.ylabel("Cosine similarity")
+            plt.title(f'MOUNT: pre-transition frames vs. visual cones, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='lower left')
+            plt.show()
         
-        #contact_region()
-        plt.figure(1)
-        x = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
-        y = np.zeros(5)
-        
-        for i in range(len(y)):
-            y[i] = self.count_match(x[i],vid_stats[0])  
-        plt.title(f'MOUNT: contact region, video {self.vid_id}')
-        plt.bar(x,y)
-        plt.show()
-        
-        #s_matrix()
-        plt.figure(2)
-        for i in range(len(lst_frames_vid)): 
-            plt.plot(np.arange(0,30),vid_stats[1,i,:],label=f'frame {mount_gap[i]}')
-        
-        plt.title(f'MOUNT: pre-transition frames vs. sym_ratio, video {self.vid_id}')
-        #plt.legend(fontsize=7,loc='upper left')
-        plt.show()
-        
-        #facing_angle()
-        plt.figure(3)
-        for i in range(len(lst_frames_vid)):
-            plt.plot(np.arange(0,30),vid_stats[2,i,:],label=f'frame {mount_gap[i]}')
-        plt.title(f'MOUNT: pre-transition frames vs. facing angle, video {self.vid_id}')
-        #plt.legend(fontsize=7,loc='upper left')
-        plt.show()
-        
-        #time_since_last_bout()
-        plt.figure(4)
-        plt.hist(vid_stats[3,:,-1])
-        plt.title(f'MOUNT: freuqnecy distribution of time since last bout, video {self.vid_id}')
-        plt.show()
-        
-        #visual_cone()
-        plt.figure(5)
-        threshold = np.cos(np.deg2rad(45))
-        plt.axhline(y=threshold,color='r',linestyle='--',label='45° cone')
-        
-        for i in range(len(lst_frames_vid)):
-            plt.plot(np.arange(0,30),vid_stats[4,i,:],color='b',label=f'frame {mount_gap[i]}')
-            plt.plot(np.arange(0,30),vid_stats[5,i,:],color='g')
-        plt.ylim(-1.05, 1.05)
-        plt.xlabel("Frame")
-        plt.ylabel("Cosine similarity")
-        plt.title(f'MOUNT: pre-transition frames vs. visual cones, video {self.vid_id}')
-        #plt.legend(fontsize=7,loc='lower left')
-        plt.show()
+        return vid_stats
 
 # =============================================================================
 # Analyze Attack - specifically displays feature distributions for attack
-# Inherited from the class "analyze_mount"
+# Inherited from class analyze_mount
 # =============================================================================
 
 class analyze_attack(analyze_mount):
+    '''
+    analyze_attack calculates features before attack bouts
+    '''
     
     def __init__(self,vid_id,data_train,data_test):
+        '''
+        Initializes an instance of analyze_mount.
+
+        Parameters:
+            vid_id: (str) video number/id
+            data_train: (dict) xy coordinates from both mice, from all videosfor training
+            data_test:  (dict) xy coordinates from both mice, from all videosfor training
+        '''
         
         super().__init__(vid_id,data_train,data_test)
         
     def pre_attack(self):
         '''
-        find whether there was investigation before attack
+        Identifies frames when there was investigation before mount
         '''
         lst_frame = []
         
@@ -484,7 +624,14 @@ class analyze_attack(analyze_mount):
     # Display dsibutions
     # =============================================================================
     
-    def disp_distribution(self):
+    def stats_arr(self,graph=True):
+        '''
+        Calculates all main features
+        Optionally graph the features as a function of 30 frame 
+        
+        Parameter:
+            graph: (bool) shows feature graphs or not.
+        '''
         
         #for each frame in gap, store all 30 frames before the frame in a list -> get_pre_onset ()
         lst_frames_vid = []
@@ -523,70 +670,76 @@ class analyze_attack(analyze_mount):
                 thi_ind = thi_ind + 1
             sec_ind = sec_ind + 1
         
-        ###display distributions across those 30 frames 
+        if graph == True:
         
-        #contact_region()
-        plt.figure(1)
-        x = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
-        y = np.zeros(5)
+            ###display distributions across those 30 frames 
+            
+            #contact_region()
+            plt.figure(1)
+            x = ["True_Head","True_Hip","True_Centroid","True_Tail","None"] #TODO reminder to possibly change this (or not)
+            y = np.zeros(5)
+            
+            for i in range(len(y)):
+                y[i] = self.count_match(x[i],vid_stats[0])  
+            plt.title(f'ATTACK: contact region, video {self.vid_id}')
+            plt.bar(x,y)
+            plt.show()
+            
+            #s_matrix()
+            plt.figure(2)
+            for i in range(len(lst_frames_vid)): 
+                plt.plot(np.arange(0,30),vid_stats[1,i,:],label=f'frame {attack_gap[i]}')
+            
+            plt.title(f'ATTACK: pre-transition frames vs. sym_ratio, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='upper left')
+            plt.show()
+            
+            #facing_angle()
+            plt.figure(3)
+            for i in range(len(lst_frames_vid)):
+                plt.plot(np.arange(0,30),vid_stats[2,i,:],label=f'frame {attack_gap[i]}')
+            plt.title(f'ATTACK: pre-transition frames vs. facing angle, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='upper left')
+            plt.show()
+            
+            #time_since_last_bout()
+            plt.figure(4)
+            plt.hist(vid_stats[3,:,-1])
+            plt.title(f'ATTACK: freuqnecy distribution of time since last bout, video {self.vid_id}')
+            plt.show()
+            
+            #visual_cone()
+            plt.figure(5)
+            threshold = np.cos(np.deg2rad(45))
+            plt.axhline(y=threshold,color='r',linestyle='--',label='45° cone')
+            
+            for i in range(len(lst_frames_vid)):
+                plt.plot(np.arange(0,30),vid_stats[4,i,:],color='b',label=f'frame {attack_gap[i]}')
+                plt.plot(np.arange(0,30),vid_stats[5,i,:],color='g')
+            plt.ylim(-1.05, 1.05)
+            plt.xlabel("Frame")
+            plt.ylabel("Cosine similarity")
+            plt.title(f'ATTACK: pre-transition frames vs. visual cones, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='lower left')
+            plt.show()
         
-        for i in range(len(y)):
-            y[i] = self.count_match(x[i],vid_stats[0])  
-        plt.title(f'ATTACK: contact region, video {self.vid_id}')
-        plt.bar(x,y)
-        plt.show()
-        
-        #s_matrix()
-        plt.figure(2)
-        for i in range(len(lst_frames_vid)): 
-            plt.plot(np.arange(0,30),vid_stats[1,i,:],label=f'frame {attack_gap[i]}')
-        
-        plt.title(f'ATTACK: pre-transition frames vs. sym_ratio, video {self.vid_id}')
-        #plt.legend(fontsize=7,loc='upper left')
-        plt.show()
-        
-        #facing_angle()
-        plt.figure(3)
-        for i in range(len(lst_frames_vid)):
-            plt.plot(np.arange(0,30),vid_stats[2,i,:],label=f'frame {attack_gap[i]}')
-        plt.title(f'ATTACK: pre-transition frames vs. facing angle, video {self.vid_id}')
-        #plt.legend(fontsize=7,loc='upper left')
-        plt.show()
-        
-        #time_since_last_bout()
-        plt.figure(4)
-        plt.hist(vid_stats[3,:,-1])
-        plt.title(f'ATTACK: freuqnecy distribution of time since last bout, video {self.vid_id}')
-        plt.show()
-        
-        #visual_cone()
-        plt.figure(5)
-        threshold = np.cos(np.deg2rad(45))
-        plt.axhline(y=threshold,color='r',linestyle='--',label='45° cone')
-        
-        for i in range(len(lst_frames_vid)):
-            plt.plot(np.arange(0,30),vid_stats[4,i,:],color='b',label=f'frame {attack_gap[i]}')
-            plt.plot(np.arange(0,30),vid_stats[5,i,:],color='g')
-        plt.ylim(-1.05, 1.05)
-        plt.xlabel("Frame")
-        plt.ylabel("Cosine similarity")
-        plt.title(f'ATTACK: pre-transition frames vs. visual cones, video {self.vid_id}')
-        #plt.legend(fontsize=7,loc='lower left')
-        plt.show()
+        return vid_stats
             
 if __name__ == "__main__":
 
+    '''
     start = time.time()
     for i in range(1,5):
         vid_mount = analyze_mount(str(i),data_train,data_test)
         #vid_attack = analyze_attack(str(i),data_train,data_test)
         
-        vid_mount.disp_distribution()
-        #vid_attack.disp_distribution()
+        vid_mount.stats_arr()
+        #vid_attack.stats_arr()
         print(f'Done w/ {i}')
     
     end = time.time()
     print(f'ALL DONE! Took {end-start} seconds')
+    '''
     
     
     
