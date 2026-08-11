@@ -6,12 +6,11 @@ Created on Fri Jul 31 07:28:42 2026
 @author: wynnsu
 """
 
-import json
-import os 
 import numpy as np
 import math
 import matplotlib.pyplot as plt
 import time
+from data_loader import data_train, data_test
 
 #Process and extract features from video coordinates
 #Classes analyze_mount, analyze_attack
@@ -19,14 +18,11 @@ import time
 #NOTE: bouts are analyzed individually.
 #This is more appropriate given that I want to distinct features between them.
 
-#Redirect
-os.chdir('/Users/wynnsu/Downloads/DeepLabCut/notebook_h5_csv')
-
-#Open and load the JSON file
-with open('calms21_task1_train.json', 'r') as file:
-    data_train = json.load(file)
-with open('calms21_task1_test.json','r') as file:
-    data_test = json.load(file)
+#NOTE: modified behavior mapping
+#Attack        -> 1
+#Investigation -> 2
+#Mount         -> 3
+#Other         -> 4
 
 # =============================================================================
 # Analyze Mount
@@ -39,7 +35,7 @@ class analyze_mount:
     Instant attributes:
         vid_id: (str) video number/id
         data_train: (dict) xy coordinates from both mice, from all videos for training
-        data_test:  (dict) xy coordinates from both mice, from all videosfor testing
+        data_test:  (dict) xy coordinates from both mice, from all videos for testing
         classific:  (dict) annotated classifications from all frames of all videos
         coor_intr:  (dict) coordinates from intruder
         coor_resi:  (dict) coordinates from resident
@@ -49,7 +45,7 @@ class analyze_mount:
     # Initializing & Processing
     # =============================================================================
     
-    def __init__(self,vid_id,data_train,data_test):
+    def __init__(self,vid_id,data_train=data_train,data_test=data_test):
         '''
         Initializes an instance of analyze_mount.
 
@@ -68,7 +64,7 @@ class analyze_mount:
             
         self.data_train = data_train
         self.data_test = data_test
-        
+    
         #Converts dictionary to numpy array (and inverts it)
         if int(vid_id) <= 70:
             self.classific = self.conv_classific_n_coor("train")[0] #train videos
@@ -100,37 +96,67 @@ class analyze_mount:
             coor_resi    = np.array(self.data_test['annotator-id_0']['task1/test/mouse'+self.vid_id+'_task1_annotator1']['keypoints'])[:,1,:,:]
         
         return (np_classific,coor_intr,coor_resi)
-
-    def pre_mount(self):
-        '''
-        Identifies frames when there was investigation before mount
-        '''
     
-        lst_frame = []
-        #Iterates the array
-        for each in range (1,len(self.classific)):
-            
-            #Checks if there was an investigation happened before
-            if self.classific[each-1] == 2 and self.classific[each] == 3:
-                lst_frame.append(each)
+    def type_bout_seg(self):
+        '''
+        #NOTE: A new version that combines pre_mount() and bout_end()
+        Identifies beginning and end of the behavioral bout in a video
         
-        return np.array(lst_frame)
+        Parameter:
+            behavior: (int) represents which behavioral bout to extract
+            examples:
+            Attack        -> 1
+            Investigation -> 2
+            Mount         -> 3
+            Other         -> 4
+        '''
+        ############
+        behavior = 3 #extract any duration of mount bout
+        ############
+        
+        #lst, a list that stores tuples of duration(beginning frame, end frame)
+        lst = []
+        ind_beg = 0
+        ind_end = 1
+        made_through_small = False #state of the program if ran the nested while loop
+        while ind_end < len(self.classific):
+            beg = self.classific[ind_beg] #beginning frame
+            end = self.classific[ind_end] #end frame
+            
+            #while the next element is still the solicited behavior
+            while ind_end < len(self.classific)-1 and (behavior == beg == end):
+                ind_end = ind_end + 1
+                end = self.classific[ind_end]
+                made_through_small = True
+        
+            #add bout duration (if any)
+            if made_through_small is True: #if ran through nested while loop
+                dur = (ind_beg,ind_end-1)
+                lst.append(dur)
+            elif (behavior == beg == end) == True:
+                dur = (ind_beg,ind_end)
+                lst.append(dur)
+                
+            ind_beg = ind_end
+            ind_end = ind_beg + 1 
+            made_through_small = False
+            
+        return np.array(lst)
     
-    def bout_end(self):
+    def filter_bout_seg(self):
         '''
-        Finds and returns frames when a mount bout ends
+        Filters out any interval between bout that is less than 30 frames
         '''
-        
-        lst_frame = []
-        
-        #Iterates the array
-        for each in range(1,len(self.classific)):
-            
-            #Checks if investigation ended
-            if self.classific[each-1] == 3 and self.classific[each] != 3:
-                lst_frame.append(each)
-        
-        return np.array(lst_frame)
+        arr = self.type_bout_seg()
+        if np.shape(arr) == (0,):
+            return None
+        diff = arr[1:,0] - arr[:-1,1]       
+        keep = [arr[0]]  #always keep first bout
+        for i in range(len(diff)):
+            if diff[i] >= 30:
+                keep.append(arr[i+1])
+                
+        return np.array(keep)
     
     def invert_y(self,np_coor):
         '''
@@ -381,14 +407,14 @@ class analyze_mount:
             np_coor_intr:      (numpy array) coordiantes from intruder
         '''
     
-        #0: nose-ears-neck centroids (or only nose)
-        #1: centroid of all body parts
-        #2: tail base
-        #construct list of body parts for each mouse
-    
+        #centroid at head
         head_resi = self.centroid_spec(frame_of_interest,np.array([np_coor_resi[:,:,0],np_coor_resi[:,:,1],np_coor_resi[:,:,2],np_coor_resi[:,:,3]]))
         head_intr = self.centroid_spec(frame_of_interest,np.array([np_coor_intr[:,:,0],np_coor_intr[:,:,1],np_coor_intr[:,:,2],np_coor_intr[:,:,3]]))
         
+        #construct list of body parts for each mouse
+        #0: nose-ears-neck centroids (or only nose)
+        #1: centroid of all body parts
+        #2: tail base
         lst_resi = [head_resi,self.centroid_all(frame_of_interest,np_coor_resi),np_coor_resi[frame_of_interest,:,6]]
         lst_intr = [head_intr,self.centroid_all(frame_of_interest,np_coor_intr),np_coor_intr[frame_of_interest,:,6]]
     
@@ -490,15 +516,17 @@ class analyze_mount:
         Parameter:
             graph: (bool) shows feature graphs or not.
         '''
-
-        #for each frame in gap, store all 30 frames before the frame in a list -> get_pre_onset ()
-        lst_frames_vid = []
-        mount_gap = self.pre_mount()
-        for each in mount_gap:
-            frames_vid = self.get_pre_onset(each)
-            lst_frames_vid.append(frames_vid)
         
-        lst_bout_end = self.bout_end() #get frames when bout ends
+        lst_frames_vid = []
+        mount_gap = self.filter_bout_seg() #numpy array (XX,2), where element is (beginning frame, end frame)
+        
+        if np.shape(mount_gap) == (): #edge case - if there is no mount bout in the given video
+            return print(f'No mounting bouts occured in video {self.vid_id}')
+        
+        #for each frame in gap, store all 30 frames before the frame in a list -> get_pre_onset ()
+        for each in mount_gap:
+            frames_vid = self.get_pre_onset(each[0])
+            lst_frames_vid.append(frames_vid)        
         
         #for each of those 30 frames, run contact_region(), s_matrix(), facing_angle()
         vid_stats = np.zeros((6,len(lst_frames_vid),30),dtype=object)
@@ -515,7 +543,7 @@ class analyze_mount:
                 if lst == 0:
                     t_l = self.time_since_last_bout(0,ele)                     #time_since_last_bout()
                 else:
-                    t_l = self.time_since_last_bout(lst_bout_end[lst-1]+1,ele) #time_since_last_bout()
+                    t_l = self.time_since_last_bout(lst_frames_vid[lst][1]+1,ele) #time_since_last_bout()
                 v_c_h = self.visual_cone(ele,self.coor_resi,self.coor_intr)[0] #visual_cone() - head
                 v_c_b = self.visual_cone(ele,self.coor_resi,self.coor_intr)[1] #visual_cone() - body
         
@@ -585,7 +613,7 @@ class analyze_mount:
         return vid_stats
 
 # =============================================================================
-# Analyze Attack - specifically displays feature distributions for attack
+# Analyze Attack
 # Inherited from class analyze_mount
 # =============================================================================
 
@@ -594,14 +622,14 @@ class analyze_attack(analyze_mount):
     analyze_attack calculates features before attack bouts
     '''
     
-    def __init__(self,vid_id,data_train,data_test):
+    def __init__(self,vid_id,data_train=data_train,data_test=data_test):
         '''
-        Initializes an instance of analyze_mount.
+        Initializes an instance of analyze_attack.
 
         Parameters:
             vid_id: (str) video number/id
-            data_train: (dict) xy coordinates from both mice, from all videosfor training
-            data_test:  (dict) xy coordinates from both mice, from all videosfor training
+            data_train: (dict) xy coordinates from both mice, from all videos for training
+            data_test:  (dict) xy coordinates from both mice, from all videos for training
         '''
         
         super().__init__(vid_id,data_train,data_test)
@@ -620,6 +648,83 @@ class analyze_attack(analyze_mount):
         
         return np.array(lst_frame)
     
+    def bout_end(self):
+        '''
+        Finds and returns frames when a attack bout ends
+        '''
+        
+        lst_frame = []
+        
+        #Iterates the array
+        for each in range(1,len(self.classific)):
+            
+            #Checks if investigation ended
+            if self.classific[each-1] == 1 and self.classific[each] != 1:
+                lst_frame.append(each)
+        
+        return np.array(lst_frame)
+    
+    def type_bout_seg(self):
+        '''
+        #NOTE: A new version that combines pre_attack() and bout_end()
+        Identifies beginning and end of the behavioral bout in a video
+        
+        Parameter:
+            behavior: (int) represents which behavioral bout to extract
+            examples:
+            Attack        -> 1
+            Investigation -> 2
+            Mount         -> 3
+            Other         -> 4
+        '''
+        ############
+        behavior = 1 #extract any duration of attack bout
+        ############
+        
+        #lst, a list that stores tuples of duration(beginning frame, end frame)
+        lst = []
+        ind_beg = 0
+        ind_end = 1
+        made_through_small = False #state of the program if ran the nested while loop
+        while ind_end < len(self.classific):
+            beg = self.classific[ind_beg] #beginning frame
+            end = self.classific[ind_end] #end frame
+            
+            #while the next element is still the solicited behavior
+            while ind_end < len(self.classific)-1 and (behavior == beg == end):
+                ind_end = ind_end + 1
+                end = self.classific[ind_end]
+                made_through_small = True
+        
+            #add bout duration (if any)
+            if made_through_small is True: #if ran through nested while loop
+                dur = (ind_beg,ind_end-1)
+                lst.append(dur)
+            elif (behavior == beg == end) == True:
+                dur = (ind_beg,ind_end)
+                lst.append(dur)
+                
+            ind_beg = ind_end
+            ind_end = ind_beg + 1 
+            made_through_small = False
+            
+        return np.array(lst)
+    
+    def filter_bout_seg(self):
+        '''
+        Filters out any interval between bout that is less than 30 frames
+        '''
+        arr = self.type_bout_seg()
+        if np.shape(arr) == (0,):
+            return None
+        diff = arr[1:,0] - arr[:-1,1]       
+        keep = [arr[0]]  #always keep first bout
+        for i in range(len(diff)):
+            if diff[i] >= 30:
+                keep.append(arr[i+1])
+                
+        return np.array(keep)
+    
     # =============================================================================
     # Display dsibutions
     # =============================================================================
@@ -633,14 +738,16 @@ class analyze_attack(analyze_mount):
             graph: (bool) shows feature graphs or not.
         '''
         
-        #for each frame in gap, store all 30 frames before the frame in a list -> get_pre_onset ()
         lst_frames_vid = []
-        attack_gap = self.pre_attack()
-        for each in attack_gap:
-            frames_vid = self.get_pre_onset(each)
-            lst_frames_vid.append(frames_vid)
+        attack_gap = self.filter_bout_seg() #numpy array (XX,2), where element is (beginning frame, end frame)
         
-        lst_bout_end = self.bout_end() #get frames when bout ends
+        if np.shape(attack_gap) == (): #edge case - if there is no mount bout in the given video
+            return print(f'No attack bouts occured in video {self.vid_id}')
+        
+        #for each frame in gap, store all 30 frames before the frame in a list -> get_pre_onset ()
+        for each in attack_gap:
+            frames_vid = self.get_pre_onset(each[0])
+            lst_frames_vid.append(frames_vid)        
         
         #for each of those 30 frames, run contact_region(), s_matrix(), facing_angle()
         vid_stats = np.zeros((6,len(lst_frames_vid),30),dtype=object)
@@ -657,7 +764,7 @@ class analyze_attack(analyze_mount):
                 if lst == 0:
                     t_l = self.time_since_last_bout(0,ele)                     #time_since_last_bout()
                 else:
-                    t_l = self.time_since_last_bout(lst_bout_end[lst-1]+1,ele) #time_since_last_bout()
+                    t_l = self.time_since_last_bout(lst_frames_vid[lst-1]+1,ele) #time_since_last_bout()
                 v_c_h = self.visual_cone(ele,self.coor_resi,self.coor_intr)[0] #visual_cone() - head
                 v_c_b = self.visual_cone(ele,self.coor_resi,self.coor_intr)[1] #visual_cone() - body
         
@@ -676,8 +783,9 @@ class analyze_attack(analyze_mount):
             
             #contact_region()
             plt.figure(1)
-            x = ["True_Head","True_Hip","True_Centroid","True_Tail","None"] #TODO reminder to possibly change this (or not)
-            y = np.zeros(5)
+            #x = ["True_Head","True_Hip","True_Centroid","True_Tail","None"] #TODO reminder to possibly change this (or not)
+            x = ["True_Head","True_Hip","True_Centroid","True_Tail"]
+            y = np.zeros(4)
             
             for i in range(len(y)):
                 y[i] = self.count_match(x[i],vid_stats[0])  
@@ -724,22 +832,253 @@ class analyze_attack(analyze_mount):
             plt.show()
         
         return vid_stats
+    
+# =============================================================================
+# Analyze Investigation & Other
+# Inherited from class analyze_mount
+# =============================================================================
+
+class analyze_other(analyze_mount):
+    '''
+    analyze_itger calculates features of non-mount-and-attack
+    '''
+    
+    def __init__(self,vid_id,data_train=data_train,data_test=data_test):
+        '''
+        Initializes an instance of analyze_other.
+
+        Parameters:
+            vid_id: (str) video number/id
+            data_train: (dict) xy coordinates from both mice, from all videos for training
+            data_test:  (dict) xy coordinates from both mice, from all videos for training
+        '''
+        
+        super().__init__(vid_id,data_train,data_test)
+    
+    #TODO exclude all mount and attack. whatever is left will be other frames
+    def get_other_frames(self):
+        return None
+    
+    
+    def type_bout_seg_investigation(self):
+        '''
+        #NOTE: A new version that combines pre_mount() and bout_end()
+        Identifies beginning and end of the behavioral bout in a video
+        
+        Parameter:
+            behavior: (int) represents which behavioral bout to extract
+            examples:
+            Attack        -> 1
+            Investigation -> 2
+            Mount         -> 3
+            Other         -> 4
+        '''
+        ############
+        behavior = 2 #extract any duration of investigation bout
+        ############
+        
+        #lst, a list that stores tuples of duration(beginning frame, end frame)
+        lst = []
+        ind_beg = 0
+        ind_end = 1
+        made_through_small = False #state of the program if ran the nested while loop
+        while ind_end < len(self.classific):
+            beg = self.classific[ind_beg] #beginning frame
+            end = self.classific[ind_end] #end frame
+            
+            #while the next element is still the solicited behavior
+            while ind_end < len(self.classific)-1 and (behavior == beg == end):
+                ind_end = ind_end + 1
+                end = self.classific[ind_end]
+                made_through_small = True
+        
+            #add bout duration (if any)
+            if made_through_small is True: #if ran through nested while loop
+                dur = (ind_beg,ind_end-1)
+                lst.append(dur)
+            elif (behavior == beg == end) == True:
+                dur = (ind_beg,ind_end)
+                lst.append(dur)
+                
+            ind_beg = ind_end
+            ind_end = ind_beg + 1 
+            made_through_small = False
+            
+        return np.array(lst)
+    
+    def type_bout_seg_other(self):
+        '''
+        #NOTE: A new version that combines pre_mount() and bout_end()
+        Identifies beginning and end of the behavioral bout in a video
+        
+        Parameter:
+            behavior: (int) represents which behavioral bout to extract
+            examples:
+            Attack        -> 1
+            Investigation -> 2
+            Mount         -> 3
+            Other         -> 4
+        '''
+        
+        ############
+        behavior = 4 #extract any duration of other bout
+        ############
+        
+        #lst, a list that stores tuples of duration(beginning frame, end frame)
+        lst = []
+        ind_beg = 0
+        ind_end = 1
+        made_through_small = False #state of the program if ran the nested while loop
+        while ind_end < len(self.classific):
+            beg = self.classific[ind_beg] #beginning frame
+            end = self.classific[ind_end] #end frame
+            
+            #while the next element is still the solicited behavior
+            while ind_end < len(self.classific)-1 and (behavior == beg == end):
+                ind_end = ind_end + 1
+                end = self.classific[ind_end]
+                made_through_small = True
+        
+            #add bout duration (if any)
+            if made_through_small is True: #if ran through nested while loop
+                dur = (ind_beg,ind_end-1)
+                lst.append(dur)
+            elif (behavior == beg == end) == True:
+                dur = (ind_beg,ind_end)
+                lst.append(dur)
+                
+            ind_beg = ind_end
+            ind_end = ind_beg + 1 
+            made_through_small = False
+            
+        return np.array(lst)
+    
+    def filter_bout_seg(self):
+        '''
+        Filters out any interval between bout that is less than 30 frames
+        '''
+        arr = self.type_bout_seg()
+        diff = arr[1:,0] - arr[:-1,1]       
+        keep = [arr[0]]  #always keep first bout
+        for i in range(len(diff)):
+            if diff[i] >= 30:
+                keep.append(arr[i+1])
+                
+        return np.array(keep)
+            
+    # =============================================================================
+    # Display dsibutions
+    # =============================================================================
+    
+    def stats_arr(self,graph=False):
+        '''
+        Calculates all main features
+        Optionally graph the features as a function of 30 frame 
+        
+        Parameter:
+            graph: (bool) shows feature graphs or not.
+        '''
+        
+        lst_frames_vid = self.other_frames()
+        
+        lst_bout_end = self.bout_end() #get frames when bout ends
+        
+        #for each of those 30 frames, run contact_region(), s_matrix(), facing_angle()
+        vid_stats = np.zeros((6,len(lst_frames_vid)),dtype=object)
+        
+        ind = 0
+        #loop through other frames
+        for frame in lst_frames_vid:
+            c_r = self.contact_region(frame,self.coor_resi,self.coor_intr)     #contact_region()
+            s_m = self.s_matrix(frame,self.coor_resi,self.coor_intr)           #s_matrix()
+            f_a = self.facing_angle(frame,self.coor_resi,self.coor_intr)       #facing_angle()
+            if frame == 0:
+                t_l = self.time_since_last_bout(0,frame)                       #time_since_last_bout()
+            else:
+                t_l = self.time_since_last_bout(lst_bout_end[frame-1]+1,frame) #time_since_last_bout()
+            v_c_h = self.visual_cone(frame,self.coor_resi,self.coor_intr)[0]   #visual_cone() - head
+            v_c_b = self.visual_cone(frame,self.coor_resi,self.coor_intr)[1]   #visual_cone() - body
+        
+            vid_stats[0,ind] = c_r
+            vid_stats[1,ind] = s_m
+            vid_stats[2,ind] = f_a
+            vid_stats[3,ind] = t_l
+            vid_stats[4,ind] = v_c_h
+            vid_stats[5,ind] = v_c_b
+            
+            ind = ind + 1
+        
+        if graph == True:
+        
+            ###display distributions across those 30 frames 
+            
+            #contact_region()
+            plt.figure(1)
+            #x = ["True_Head","True_Hip","True_Centroid","True_Tail","None"] #TODO reminder to possibly change this (or not)
+            x = ["True_Head","True_Hip","True_Centroid","True_Tail"]
+            y = np.zeros(4)
+            
+            for i in range(len(y)):
+                y[i] = self.count_match(x[i],vid_stats[0])  
+            plt.title(f'OTHER: contact region, video {self.vid_id}')
+            plt.bar(x,y)
+            plt.show()
+            
+            #s_matrix()
+            plt.figure(2)
+            for i in lst_frames_vid: 
+                plt.plot(np.arange(0,30),vid_stats[1,i],label=f'frame {i}')
+            
+            plt.title(f'OTHER: pre-transition frames vs. sym_ratio, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='upper left')
+            plt.show()
+            
+            #facing_angle()
+            plt.figure(3)
+            for i in lst_frames_vid:
+                plt.plot(np.arange(0,30),vid_stats[2,i],label=f'frame {i}')
+            plt.title(f'OTHER: pre-transition frames vs. facing angle, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='upper left')
+            plt.show()
+            
+            #time_since_last_bout()
+            plt.figure(4)
+            plt.hist(vid_stats[3,:])
+            plt.title(f'OTHER: freuqnecy distribution of time since last bout, video {self.vid_id}')
+            plt.show()
+            
+            #visual_cone()
+            plt.figure(5)
+            threshold = np.cos(np.deg2rad(45))
+            plt.axhline(y=threshold,color='r',linestyle='--',label='45° cone')
+            
+            for i in lst_frames_vid:
+                plt.plot(np.arange(0,30),vid_stats[4,i],color='b',label=f'frame {i}')
+                plt.plot(np.arange(0,30),vid_stats[5,i],color='g')
+            plt.ylim(-1.05, 1.05)
+            plt.xlabel("Frame")
+            plt.ylabel("Cosine similarity")
+            plt.title(f'OTHER: pre-transition frames vs. visual cones, video {self.vid_id}')
+            #plt.legend(fontsize=7,loc='lower left')
+            plt.show()
+        
+        return vid_stats
             
 if __name__ == "__main__":
-
-    '''
+    
     start = time.time()
-    for i in range(1,5):
+    
+    for i in range(55,60):
         vid_mount = analyze_mount(str(i),data_train,data_test)
-        #vid_attack = analyze_attack(str(i),data_train,data_test)
+        vid_attack = analyze_attack(str(i),data_train,data_test)
         
         vid_mount.stats_arr()
-        #vid_attack.stats_arr()
+        vid_attack.stats_arr()
         print(f'Done w/ {i}')
-    
+
+   
     end = time.time()
     print(f'ALL DONE! Took {end-start} seconds')
-    '''
     
     
     
