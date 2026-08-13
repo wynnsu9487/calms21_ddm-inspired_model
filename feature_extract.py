@@ -511,7 +511,7 @@ class analyze_mount:
     def stats_arr(self,graph=True):
         '''
         Calculates all main features
-        Optionally graphs the features as a function of 30 frame 
+        Optionally graphs the features as a function of frame 
         
         Parameter:
             graph: (bool) shows feature graphs or not.
@@ -526,7 +526,8 @@ class analyze_mount:
         #for each frame in gap, store all 30 frames before the frame in a list -> get_pre_onset ()
         for each in mount_gap:
             frames_vid = self.get_pre_onset(each[0])
-            lst_frames_vid.append(frames_vid)        
+            if frames_vid is not None:
+                lst_frames_vid.append(frames_vid)        
         
         #for each of those 30 frames, run contact_region(), s_matrix(), facing_angle()
         vid_stats = np.zeros((6,len(lst_frames_vid),30),dtype=object)
@@ -543,7 +544,7 @@ class analyze_mount:
                 if lst == 0:
                     t_l = self.time_since_last_bout(0,ele)                     #time_since_last_bout()
                 else:
-                    t_l = self.time_since_last_bout(lst_frames_vid[lst][1]+1,ele) #time_since_last_bout()
+                    t_l = self.time_since_last_bout(lst_frames_vid[lst][1][-1]+1,ele) #time_since_last_bout()
                 v_c_h = self.visual_cone(ele,self.coor_resi,self.coor_intr)[0] #visual_cone() - head
                 v_c_b = self.visual_cone(ele,self.coor_resi,self.coor_intr)[1] #visual_cone() - body
         
@@ -764,7 +765,7 @@ class analyze_attack(analyze_mount):
                 if lst == 0:
                     t_l = self.time_since_last_bout(0,ele)                     #time_since_last_bout()
                 else:
-                    t_l = self.time_since_last_bout(lst_frames_vid[lst-1]+1,ele) #time_since_last_bout()
+                    t_l = self.time_since_last_bout(lst_frames_vid[lst-1][-1]+1,ele) #time_since_last_bout()
                 v_c_h = self.visual_cone(ele,self.coor_resi,self.coor_intr)[0] #visual_cone() - head
                 v_c_b = self.visual_cone(ele,self.coor_resi,self.coor_intr)[1] #visual_cone() - body
         
@@ -857,8 +858,49 @@ class analyze_other(analyze_mount):
     
     #TODO exclude all mount and attack. whatever is left will be other frames
     def get_other_frames(self):
-        return None
-    
+        
+        lst_other_frames = []
+        
+        #temporary variable for inputting vid_id
+        if int(self.vid_id[1]) == 0:
+            temp_vid_id = self.vid_id[2] 
+        else:
+            temp_vid_id = self.vid_id[1:]
+        
+        #get instances of mount & attack
+        vid_mount = analyze_mount(temp_vid_id,data_train,data_test)
+        vid_attack = analyze_attack(temp_vid_id,data_train,data_test)
+        
+        #get their bout segments
+        mount_fr = vid_mount.filter_bout_seg()
+        attack_fr = vid_attack.filter_bout_seg()
+        print(f'vid {self.vid_id}: {np.shape(mount_fr)},{np.shape(attack_fr)}')
+        
+        #stack bout duration, then sort mount & attack segment into a single array
+        fr = np.sort(np.vstack((mount_fr,attack_fr)),axis=0)
+ 
+        diff_m = fr[1:,0] - fr[:-1,1]       
+        filter_m = [fr[0]] #always keep first bout
+        for i in range(len(diff_m)):
+            if diff_m[i] >= 30:
+                filter_m.append(fr[i+1])
+                
+        filter_m = np.array(filter_m)
+        
+        #for each element in that list, add frames that are neither during bout nor pre-bout
+        for each in range(len(filter_m[:,0])):
+            if each == 0 and filter_m[0,each]-30 <= 0:
+                pre_onset_fr = 'Skips first pre-bout frames because pre-onset is too short'
+            elif each == 0 and filter_m[each,0]-30 > 0:
+                pre_onset_fr = np.arange(0,filter_m[each,0])
+            else:
+                end = filter_m[each-1,1] #end of previous bout
+                begin = filter_m[each,0]-30 #beginning of next pre-bout
+                pre_onset_fr = np.arange(end,begin)
+            if type(pre_onset_fr)!= str:
+                lst_other_frames.append(pre_onset_fr)
+                
+        return lst_other_frames
     
     def type_bout_seg_investigation(self):
         '''
@@ -1068,6 +1110,7 @@ if __name__ == "__main__":
     
     start = time.time()
     
+    '''
     for i in range(55,60):
         vid_mount = analyze_mount(str(i),data_train,data_test)
         vid_attack = analyze_attack(str(i),data_train,data_test)
@@ -1075,6 +1118,17 @@ if __name__ == "__main__":
         vid_mount.stats_arr()
         vid_attack.stats_arr()
         print(f'Done w/ {i}')
+    '''
+    
+    for i in range(45,46):
+        vid_other = analyze_other(str(i))
+        vid_mount = analyze_mount(str(i))
+        vid_attack = analyze_attack(str(i))
+        other_fr = (vid_other.get_other_frames())
+        
+        vid_mount.stats_arr()
+        vid_attack.stats_arr()
+        
 
    
     end = time.time()
