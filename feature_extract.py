@@ -275,6 +275,7 @@ class analyze_mount:
             mag_resi = np.sqrt(self.dot_prod([dx2,dy2],[dx2,dy2]))
             
             cos = dot_product / (mag_intr*mag_resi)
+            cos = max(-1.0,min(1.0,cos)) #avoid domain error
             angle = math.acos(cos)
             angle_degree = math.degrees(angle)
                 
@@ -363,7 +364,7 @@ class analyze_mount:
         intr_hipL = np_coor_intr[frame_of_interest,:,4]
         intr_hipR = np_coor_intr[frame_of_interest,:,5]
         intr_tail = np_coor_intr[frame_of_interest,:,6]
-    
+        
         #if resident nose is close to intruder head
         if (self.dist(resi_nose,intr_centroid_head) <= 40 and self.angle_btw_lines(resi_nose,resi_neck,intr_centroid_head) <= 15):
             return "True_Head"
@@ -527,7 +528,7 @@ class analyze_mount:
         for each in mount_gap:
             frames_vid = self.get_pre_onset(each[0])
             if frames_vid is not None:
-                lst_frames_vid.append(frames_vid)        
+                lst_frames_vid.append(frames_vid) 
         
         #for each of those 30 frames, run contact_region(), s_matrix(), facing_angle()
         vid_stats = np.zeros((6,len(lst_frames_vid),30),dtype=object)
@@ -536,6 +537,7 @@ class analyze_mount:
         #loop through transition frame
         for lst in range(len(lst_frames_vid)):
             thi_ind = 0
+            bout_end_fr = mount_gap[lst,1]
             #loop through pre-transition frames
             for ele in lst_frames_vid[lst]:
                 c_r = self.contact_region(ele,self.coor_resi,self.coor_intr)   #contact_region()
@@ -544,7 +546,7 @@ class analyze_mount:
                 if lst == 0:
                     t_l = self.time_since_last_bout(0,ele)                     #time_since_last_bout()
                 else:
-                    t_l = self.time_since_last_bout(lst_frames_vid[lst][1][-1]+1,ele) #time_since_last_bout()
+                    t_l = self.time_since_last_bout(bout_end_fr,ele) #time_since_last_bout()
                 v_c_h = self.visual_cone(ele,self.coor_resi,self.coor_intr)[0] #visual_cone() - head
                 v_c_b = self.visual_cone(ele,self.coor_resi,self.coor_intr)[1] #visual_cone() - body
         
@@ -649,22 +651,6 @@ class analyze_attack(analyze_mount):
         
         return np.array(lst_frame)
     
-    def bout_end(self):
-        '''
-        Finds and returns frames when a attack bout ends
-        '''
-        
-        lst_frame = []
-        
-        #Iterates the array
-        for each in range(1,len(self.classific)):
-            
-            #Checks if investigation ended
-            if self.classific[each-1] == 1 and self.classific[each] != 1:
-                lst_frame.append(each)
-        
-        return np.array(lst_frame)
-    
     def type_bout_seg(self):
         '''
         #NOTE: A new version that combines pre_attack() and bout_end()
@@ -741,22 +727,22 @@ class analyze_attack(analyze_mount):
         
         lst_frames_vid = []
         attack_gap = self.filter_bout_seg() #numpy array (XX,2), where element is (beginning frame, end frame)
-        
         if np.shape(attack_gap) == (): #edge case - if there is no mount bout in the given video
             return print(f'No attack bouts occured in video {self.vid_id}')
         
         #for each frame in gap, store all 30 frames before the frame in a list -> get_pre_onset ()
         for each in attack_gap:
             frames_vid = self.get_pre_onset(each[0])
-            lst_frames_vid.append(frames_vid)        
+            if frames_vid is not None:
+                lst_frames_vid.append(frames_vid)        
         
         #for each of those 30 frames, run contact_region(), s_matrix(), facing_angle()
         vid_stats = np.zeros((6,len(lst_frames_vid),30),dtype=object)
         sec_ind = 0
-        
         #loop through transition frame
         for lst in range(len(lst_frames_vid)):
             thi_ind = 0
+            bout_end_fr = attack_gap[lst,1]
             #loop through pre-transition frames
             for ele in lst_frames_vid[lst]:
                 c_r = self.contact_region(ele,self.coor_resi,self.coor_intr)   #contact_region()
@@ -765,7 +751,7 @@ class analyze_attack(analyze_mount):
                 if lst == 0:
                     t_l = self.time_since_last_bout(0,ele)                     #time_since_last_bout()
                 else:
-                    t_l = self.time_since_last_bout(lst_frames_vid[lst-1][-1]+1,ele) #time_since_last_bout()
+                    t_l = self.time_since_last_bout(bout_end_fr,ele) #time_since_last_bout()
                 v_c_h = self.visual_cone(ele,self.coor_resi,self.coor_intr)[0] #visual_cone() - head
                 v_c_b = self.visual_cone(ele,self.coor_resi,self.coor_intr)[1] #visual_cone() - body
         
@@ -856,7 +842,6 @@ class analyze_other(analyze_mount):
         
         super().__init__(vid_id,data_train,data_test)
     
-    #TODO exclude all mount and attack. whatever is left will be other frames
     def get_other_frames(self):
         
         lst_other_frames = []
@@ -877,7 +862,19 @@ class analyze_other(analyze_mount):
         print(f'vid {self.vid_id}: {np.shape(mount_fr)},{np.shape(attack_fr)}')
         
         #stack bout duration, then sort mount & attack segment into a single array
-        fr = np.sort(np.vstack((mount_fr,attack_fr)),axis=0)
+        
+        #if neither mount nor attack happened, returns all frames as other
+        if np.shape(mount_fr) == np.shape(attack_fr) == (): 
+            return np.arange(0,len(self.classific))
+        #elif only attack happened, store only attack frames in fr
+        elif np.shape(mount_fr) == () and np.shape(attack_fr) != ():
+            fr = attack_fr
+        #elif only mount happened, store only mount frames in fr 
+        elif np.shape(mount_fr) != () and np.shape(attack_fr) == ():
+            fr = mount_fr
+        #else if both bouts happened, store both bout frames in fr
+        else:
+            fr = np.sort(np.vstack((mount_fr,attack_fr)),axis=0)
  
         diff_m = fr[1:,0] - fr[:-1,1]       
         filter_m = [fr[0]] #always keep first bout
@@ -900,7 +897,7 @@ class analyze_other(analyze_mount):
             if type(pre_onset_fr)!= str:
                 lst_other_frames.append(pre_onset_fr)
                 
-        return lst_other_frames
+        return np.concatenate(lst_other_frames)
     
     def type_bout_seg_investigation(self):
         '''
@@ -1007,6 +1004,28 @@ class analyze_other(analyze_mount):
                 keep.append(arr[i+1])
                 
         return np.array(keep)
+    
+    # =============================================================================
+    # Helper Functions    
+    # =============================================================================
+    
+    def count_match(self,match,arr):
+        '''
+        Counts how many elements in arr matches the string.
+        
+        Parameter:
+            match: (str) any string (eg. True_Head) 
+            arr:   (numpy array) matrix containing string
+        '''
+        
+        count = 0
+        row = len(arr)
+        
+        for r in range(row):
+            if arr[r] == match:
+                count = count + 1
+                    
+        return count
             
     # =============================================================================
     # Display dsibutions
@@ -1021,30 +1040,25 @@ class analyze_other(analyze_mount):
             graph: (bool) shows feature graphs or not.
         '''
         
-        lst_frames_vid = self.other_frames()
-        
-        lst_bout_end = self.bout_end() #get frames when bout ends
+        #get a list of non-attack, non-mount, and non-pre-transition frames
+        lst_frames_vid = self.get_other_frames()
         
         #for each of those 30 frames, run contact_region(), s_matrix(), facing_angle()
         vid_stats = np.zeros((6,len(lst_frames_vid)),dtype=object)
         
         ind = 0
-        #loop through other frames
         for frame in lst_frames_vid:
             c_r = self.contact_region(frame,self.coor_resi,self.coor_intr)     #contact_region()
             s_m = self.s_matrix(frame,self.coor_resi,self.coor_intr)           #s_matrix()
             f_a = self.facing_angle(frame,self.coor_resi,self.coor_intr)       #facing_angle()
-            if frame == 0:
-                t_l = self.time_since_last_bout(0,frame)                       #time_since_last_bout()
-            else:
-                t_l = self.time_since_last_bout(lst_bout_end[frame-1]+1,frame) #time_since_last_bout()
+            #NOTE: t_l will not be collected, bc t_l only serves as a noise variable to escalation (not drift rate itself)
             v_c_h = self.visual_cone(frame,self.coor_resi,self.coor_intr)[0]   #visual_cone() - head
             v_c_b = self.visual_cone(frame,self.coor_resi,self.coor_intr)[1]   #visual_cone() - body
         
             vid_stats[0,ind] = c_r
             vid_stats[1,ind] = s_m
             vid_stats[2,ind] = f_a
-            vid_stats[3,ind] = t_l
+            vid_stats[3,ind] = None #t_l is None
             vid_stats[4,ind] = v_c_h
             vid_stats[5,ind] = v_c_b
             
@@ -1070,7 +1084,6 @@ class analyze_other(analyze_mount):
             plt.figure(2)
             for i in lst_frames_vid: 
                 plt.plot(np.arange(0,30),vid_stats[1,i],label=f'frame {i}')
-            
             plt.title(f'OTHER: pre-transition frames vs. sym_ratio, video {self.vid_id}')
             #plt.legend(fontsize=7,loc='upper left')
             plt.show()
@@ -1083,14 +1096,16 @@ class analyze_other(analyze_mount):
             #plt.legend(fontsize=7,loc='upper left')
             plt.show()
             
-            #time_since_last_bout()
+            #time_since_last_bout() - SKIPPED
+            '''
             plt.figure(4)
             plt.hist(vid_stats[3,:])
             plt.title(f'OTHER: freuqnecy distribution of time since last bout, video {self.vid_id}')
             plt.show()
+            '''
             
             #visual_cone()
-            plt.figure(5)
+            plt.figure(4)
             threshold = np.cos(np.deg2rad(45))
             plt.axhline(y=threshold,color='r',linestyle='--',label='45° cone')
             
@@ -1120,17 +1135,17 @@ if __name__ == "__main__":
         print(f'Done w/ {i}')
     '''
     
-    for i in range(45,46):
+    for i in range(1,10):
         vid_other = analyze_other(str(i))
         vid_mount = analyze_mount(str(i))
         vid_attack = analyze_attack(str(i))
         other_fr = (vid_other.get_other_frames())
         
-        vid_mount.stats_arr()
-        vid_attack.stats_arr()
+        vid_mount.stats_arr(False)
+        vid_attack.stats_arr(False)
+        vid_other.stats_arr(False)
         
-
-   
+        
     end = time.time()
     print(f'ALL DONE! Took {end-start} seconds')
     
