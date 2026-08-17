@@ -897,7 +897,7 @@ class analyze_other(analyze_mount):
             if type(pre_onset_fr)!= str:
                 lst_other_frames.append(pre_onset_fr)
                 
-        return np.concatenate(lst_other_frames)
+        return lst_other_frames
     
     def type_bout_seg_investigation(self):
         '''
@@ -1041,7 +1041,7 @@ class analyze_other(analyze_mount):
         '''
         
         #get a list of non-attack, non-mount, and non-pre-transition frames
-        lst_frames_vid = self.get_other_frames()
+        lst_frames_vid = np.concatenate(self.get_other_frames())
         
         #for each of those 30 frames, run contact_region(), s_matrix(), facing_angle()
         vid_stats = np.zeros((6,len(lst_frames_vid)),dtype=object)
@@ -1141,9 +1141,9 @@ if __name__ == "__main__":
         vid_attack = analyze_attack(str(i))
         other_fr = (vid_other.get_other_frames())
         
-        vid_mount.stats_arr(False)
-        vid_attack.stats_arr(False)
-        vid_other.stats_arr(False)
+        vid_mount.stats_arr(True)
+        vid_attack.stats_arr(True)
+        #vid_other.stats_arr(True) #XXX - vid_other does not use 30 frame (it varies), that why it doesn't work
         
         
     end = time.time()
