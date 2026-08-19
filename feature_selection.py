@@ -231,6 +231,169 @@ This is exactly what you've been doing already — one feature at a time, bin it
 Nothing new here — just labeling what you already know how to do.
 '''
 
+# =============================================================================
+# Contact Region Binning
+# =============================================================================
+
+#P({MOUNT,ATTACK,OTHER} | {True_Head,True_Centroid,True_Hip,True_Tail,None})
+
+def count_match(match,arr):
+    
+    count = 0
+    for i in range(len(arr)):
+            if arr[i] == match:
+                count = count + 1
+                
+    return count
+
+#get contact_region for specific behavior:
+def cr_mount(class_mount,lst_frames):
+    
+    regions = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
+    
+    if lst_frames is None: #edge case: if a specific behavior wasn't in the video
+        return None
+    lst_contact = [] #stores a list of regions being contacted
+    for lst in lst_frames:
+        arr_fr = class_mount.get_pre_onset(lst[0])
+        if arr_fr is not None:
+            for fr in arr_fr:
+                contacted = class_mount.contact_region(fr,class_mount.coor_resi,class_mount.coor_intr)
+                lst_contact.append(contacted) #append the contacted region
+    
+    bins = [] #organized by {"True_Head","True_Hip","True_Centroid","True_Tail","None"}
+    for each in regions:
+        bins.append(count_match(each,lst_contact)) 
+        
+    return bins
+    
+def cr_attack(class_attack,lst_frames):
+    
+    regions = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
+    
+    if lst_frames is None: #edge case: if a specific behavior wasn't in the video
+        return None
+    
+    bins = [] #organized by {True_Head,True_Centroid,True_Hip,True_Tail,None}
+    lst_contact = [] #stores a list of regions being contacted
+    for lst in lst_frames:
+        arr_fr = class_attack.get_pre_onset(lst[0])
+        if arr_fr is not None:
+            for fr in arr_fr:
+                contacted = class_attack.contact_region(fr,class_attack.coor_resi,class_attack.coor_intr)
+            lst_contact.extend(contacted) #append the contacted region
+    
+    for each in regions:
+        bins.append(count_match(each,lst_contact))
+        
+    return bins
+
+def cr_other(class_other,lst_frames):
+    
+    regions = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
+    
+    if lst_frames is None: #edge case: if a specific behavior wasn't in the video
+        return None
+    bins = [] #organized by {True_Head,True_Centroid,True_Hip,True_Tail,None}
+    lst_contact = [] #stores a list of regions being contacted
+    for lst in lst_frames:
+        if not isinstance(lst, np.int64): 
+            for fr in lst:
+                contacted = class_other.contact_region(fr,class_other.coor_resi,class_other.coor_intr)
+                lst_contact.append(contacted) #append the contacted region
+        else:
+            contacted = class_other.contact_region(lst,class_other.coor_resi,class_other.coor_intr)
+            lst_contact.append(contacted)
+    
+    for each in regions:
+        bins.append(count_match(each,lst_contact))
+        
+    return bins
+
+def graph_cr_bin(vid_id,behavior):
+    
+    #get instance of mount, attack, other from a video
+    mount = analyze_mount(str(vid_id),data_train,data_test)
+    attack = analyze_attack(str(vid_id),data_train,data_test)
+    other = analyze_other(str(vid_id),data_train,data_test)
+    
+    #get bout duration for indicated behaviors
+    dur_mount = mount.filter_bout_seg()
+    dur_attack = attack.filter_bout_seg()
+    dur_other = other.get_other_frames()
+    
+    #get frequency of contacts for indicated behaviors, 
+    #where each bin represents a contact region
+    bins_mount = cr_mount(mount,dur_mount)
+    bins_attack = cr_attack(attack,dur_attack)
+    bins_other = cr_other(other,dur_other)
+    
+    print(bins_mount)
+    print(bins_attack)
+    print(bins_other)
+    
+    #get total of bin_mount/attack/other
+    bin_sum = []
+    
+    #take the same bin from all classes, compute probability
+    #probability of the behavior given a value range
+    for i in range(5):
+        total = 0
+        for j in [bins_mount,bins_attack,bins_other]:
+            if j is not None:
+                #total number in a specific bin
+                total = j[i] + total
+        bin_sum.append(total)
+    
+    prob = []
+    plt.figure()
+    #bin is each contact region made before bout / total contacts made
+    if behavior == "mount":
+        if bins_mount is None:
+            return print(f'No mount in video {vid_id}')
+        for i in range(5):
+            if bin_sum[i] != 0:
+                prob.append(bins_mount[i]/bin_sum[i])
+            else:
+                prob.append(0)
+        plt.title(f'MOUNT: Video {vid_id}')
+        plt.xlabel("Contact Region")
+        plt.ylabel("P(MOUNT | Feature)")
+        plt.bar(["True_Head","True_Hip","True_Centroid","True_Tail","None"],prob,align='edge')
+        
+    elif behavior == "attack":
+        if bins_attack is None:
+            return print(f'No attack in video {vid_id}')
+        for i in range(5):
+            if bin_sum[i] != 0:
+                prob.append(bins_attack[i]/bin_sum[i])
+            else:
+                prob.append(0)
+        plt.title(f'ATTACK: Video {vid_id}')
+        plt.xlabel("Contact Region")
+        plt.ylabel("P(ATTACK | Feature)")
+        plt.bar(["True_Head","True_Hip","True_Centroid","True_Tail","None"],prob,align='edge')
+                
+    else: #behavior == "other"
+        if bins_other is None:
+            return print(f'No other in video {vid_id}')
+        for i in range(5):
+            if bin_sum[i] != 0:
+                prob.append(bins_other[i]/bin_sum[i])
+            else:
+                prob.append(0)
+        plt.title(f'OTHER: Video {vid_id}')
+        plt.xlabel("Contact Region")
+        plt.ylabel("P(OTHER | Feature)")
+        plt.bar(["True_Head","True_Hip","True_Centroid","True_Tail","None"],prob,align='edge')
+            
+    plt.show()
+    return prob
+
+# =============================================================================
+# S-Matrix Binning
+# =============================================================================
+
 def compute_window(lst):
     '''
     lst is a frame
@@ -297,7 +460,7 @@ def m_a_s_matrix_calc(class_ma,lst_frames):
     lst_delt_ma = []
     for lst in lst_frames:
         arr_fr = class_ma.get_pre_onset(lst[0])
-        if arr_fr is not None:
+        if arr_fr is not None: #edge case: if beginning of pre-transition is < 0
             for i in [0,15]: #only iterate twice because pre-transition frames are always 30, thus 30/15=2
                 ma_I = class_ma.s_matrix(arr_fr[i],class_ma.coor_intr,class_ma.coor_resi)
                 ma_F = class_ma.s_matrix(arr_fr[i+14],class_ma.coor_intr,class_ma.coor_resi)
@@ -393,15 +556,13 @@ def graph_s_matrix_bin(vid_id,behavior):
             return print(f'No mount in video {vid_id}')
         for i in range(10):
             if len(bin_sum[i]) != 0:
-                print(f'bin{i}: {len(bin_mount[1][i])},{len(bin_sum[i])}')
-                print(f'RESULT: {len(bin_mount[1][i])/len(bin_sum[i])}')
                 prob.append(len(bin_mount[1][i])/len(bin_sum[i]))
             else:
                 prob.append(0)
         #find how many are mount given a value range
         plt.title(f'MOUNT: Video {vid_id}')
         plt.xlabel("change in sym_ratio over 15 frames")
-        plt.ylabel("P(MOUNT|Feature)")
+        plt.ylabel("P(MOUNT | Feature)")
         plt.bar(bin_mount[0][:-1],prob,width=np.diff(bin_mount[0]),align='edge')
 
     elif behavior == "attack":
@@ -415,7 +576,7 @@ def graph_s_matrix_bin(vid_id,behavior):
         #find how many are mount given a value range
         plt.title(f'ATTACK: Video {vid_id}')
         plt.xlabel("change in sym_ratio over 15 frames")
-        plt.ylabel("P(MOUNT|Feature)")
+        plt.ylabel("P(ATTACK | Feature)")
         plt.bar(bin_attack[0][:-1],prob,width=np.diff(bin_attack[0]),align='edge')
         
     else: #behavior == "other"
@@ -427,7 +588,392 @@ def graph_s_matrix_bin(vid_id,behavior):
         #find how many are mount given a value range
         plt.title(f'OTHER: Video {vid_id}')
         plt.xlabel("change in sym_ratio over 15 frames")
-        plt.ylabel("P(MOUNT|Feature)")
+        plt.ylabel("P(OTHER | Feature)")
+        plt.bar(bin_other[0][:-1],prob,width=np.diff(bin_other[0]),align='edge')
+    plt.show()
+    
+    return prob
+
+# =============================================================================
+# Facing Angle Binning
+# =============================================================================
+
+#NOTE - still use compute_window() from s_matrix
+
+#TODO - checks if max value of facing angle is greater than my bin view window
+
+def fa_mount(class_mount,lst_frames):
+    
+    if lst_frames is None: #edge case: if a specific behavior wasn't in the video
+        return None
+    
+    lst_delt_fa = []
+    for lst in lst_frames:
+        arr_fr = class_mount.get_pre_onset(lst[0])
+        if arr_fr is not None: #edge case: if beginning of pre-transition is < 0
+            for i in [0,15]: #only iterate twice because pre-transition frames are always 30, thus 30/15=2
+                fa_I = class_mount.facing_angle(arr_fr[i],class_mount.coor_intr,class_mount.coor_resi)
+                fa_F = class_mount.facing_angle(arr_fr[i+14],class_mount.coor_intr,class_mount.coor_resi)
+                delt_fa = np.abs((fa_F-fa_I) / 15)
+                lst_delt_fa.append(delt_fa)
+
+    return lst_delt_fa
+
+def fa_attack(class_attack,lst_frames):
+    
+    if lst_frames is None: #edge case: if a specific behavior wasn't in the video
+        return None
+    
+    lst_delt_fa = []
+    for lst in lst_frames:
+        arr_fr = class_attack.get_pre_onset(lst[0])
+        if arr_fr is not None: #edge case: if beginning of pre-transition is < 0
+            for i in [0,15]: #only iterate twice because pre-transition frames are always 30, thus 30/15=2
+                fa_I = class_attack.facing_angle(arr_fr[i],class_attack.coor_intr,class_attack.coor_resi)
+                fa_F = class_attack.facing_angle(arr_fr[i+14],class_attack.coor_intr,class_attack.coor_resi)
+                delt_fa = np.abs((fa_F-fa_I) / 15)
+                lst_delt_fa.append(delt_fa)
+
+    return lst_delt_fa
+
+def fa_other(class_other,lst_frames):
+    
+    lst_delt_fa = []
+    
+    #edge case: if lst_frames is not nested but a list itself
+    if isinstance(lst_frames[0], np.int64): 
+        windows = compute_window(lst_frames)
+        for bout in windows:
+            fa_I = class_other.facing_angle(bout[0],class_other.coor_intr,class_other.coor_resi)
+            fa_F = class_other.facing_angle(bout[1],class_other.coor_intr,class_other.coor_resi)
+            delt_fa = (fa_F-fa_I) / 15
+            lst_delt_fa.append(delt_fa)
+            
+        return lst_delt_fa
+
+    #get a list of 15-frame window, stored as tuples [begin, end of 15 frames]
+    for lst in lst_frames:
+        #if length of lst is greater than or equal to 15:
+        if len(lst) >= 15:
+            windows = compute_window(lst)
+            for bout in windows:
+                fa_I = class_other.facing_angle(bout[0],class_other.coor_intr,class_other.coor_resi)
+                fa_F = class_other.facing_angle(bout[1],class_other.coor_intr,class_other.coor_resi)
+                delt_fa = (fa_F-fa_I) / 15
+                lst_delt_fa.append(delt_fa)
+    
+    return lst_delt_fa
+
+def fa_bins(fa_val,intervals):
+    
+    if fa_val is None:
+        return None
+    
+    #create an array of bins
+    #EXAMPLE: 0.0 ≤ x < 0.1 is 1 bin 
+    arr = np.round(np.linspace(0, 1, num=intervals+1),10)
+    
+    bins = []
+    
+    #for each interval, iterate all elements in s_matrix_val
+    for i in range(intervals):
+        bin_val = []
+        for j in fa_val:
+            #if binning the first 9 bins
+            if i < intervals-1:
+                if arr[i] <= j < arr[i+1]:
+                    bin_val.append(j)
+            #else binning the last bin
+            else:
+                if arr[i] <= j <= arr[i+1]:
+                    bin_val.append(j)
+        bins.append(bin_val)
+
+    return arr,bins
+
+def graph_fa_bins(vid_id,behavior):
+    
+    #compute s_matrix for three diff classes
+    mount = analyze_mount(str(vid_id),data_train,data_test)
+    attack = analyze_attack(str(vid_id),data_train,data_test)
+    other = analyze_other(str(vid_id),data_train,data_test)
+    
+    #get frame duration of behaviors
+    dur_mount = mount.filter_bout_seg()
+    dur_attack = attack.filter_bout_seg()
+    dur_other = other.get_other_frames()
+    
+    #compute facing_angle rate
+    ma_mount = fa_mount(mount, dur_mount)
+    ma_attack = fa_attack(attack, dur_attack)
+    ma_other = fa_other(other,dur_other)
+    
+    '''
+    for i in [sm_mount,sm_attack,sm_other]: #XXX TO BE DELETED
+        data = np.array(i)  # your full computed values across all windows
+        print("min:", data.min(), "max:", data.max())
+    '''
+    
+    #bin each of them using s_matrix_bin()
+    bin_mount = fa_bins(ma_mount, 10)
+    bin_attack = fa_bins(ma_attack, 10)
+    bin_other = fa_bins(ma_other, 10)
+    
+    bin_sum = []
+    #take the same bin from all classes, compute probability
+    #probability of the behavior given a value range
+    for i in range(10):
+        curr_bin = []
+        for j in [bin_mount,bin_attack,bin_other]:
+            if j is not None:
+                #total number in a specific bin
+                curr_bin.extend(j[1][i])
+        bin_sum.append(curr_bin)
+        
+    prob = [] #probability of an indicated given a range of feature value
+    #e.g. given s-matrix range [0,0.1], how many of those s-matrix values belong to mount/attack/other
+    #show bins given an indicated behavior
+    
+    plt.figure()
+    if behavior == "mount":
+        if bin_mount is None:
+            return print(f'No mount in video {vid_id}')
+        for i in range(10):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_mount[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'MOUNT: Video {vid_id}')
+        plt.xlabel("change in facing_angle over 15 frames")
+        plt.ylabel("P(MOUNT | Feature)")
+        plt.bar(bin_mount[0][:-1],prob,width=np.diff(bin_mount[0]),align='edge')
+
+    elif behavior == "attack":
+        if bin_attack is None:
+            return print(f'No attack in video {vid_id}')
+        for i in range(10):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_attack[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'ATTACK: Video {vid_id}')
+        plt.xlabel("change in facing_angle over 15 frames")
+        plt.ylabel("P(ATTACK | Feature)")
+        plt.bar(bin_attack[0][:-1],prob,width=np.diff(bin_attack[0]),align='edge')
+        
+    else: #behavior == "other"
+        for i in range(10):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_other[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'OTHER: Video {vid_id}')
+        plt.xlabel("change in facing_angle over 15 frames")
+        plt.ylabel("P(OTHER | Feature)")
+        plt.bar(bin_other[0][:-1],prob,width=np.diff(bin_other[0]),align='edge')
+    plt.show()
+    
+    return prob
+
+# =============================================================================
+# Visual Cone Binning
+# =============================================================================
+
+#NOTE - still use compute_window() from s_matrix
+
+#TODO - need to separate vc_head from vc_body
+
+def vc_mount(class_mount,lst_frames,part):
+    
+    if lst_frames is None: #edge case: if a specific behavior wasn't in the video
+        return None
+    
+    lst_delt_vc = []
+    for lst in lst_frames:
+        arr_fr = class_mount.get_pre_onset(lst[0])
+        if arr_fr is not None: #edge case: if beginning of pre-transition is < 0
+            for i in [0,15]: #only iterate twice because pre-transition frames are always 30, thus 30/15=2
+                fa_I = class_mount.visual_cone(arr_fr[i],class_mount.coor_intr,class_mount.coor_resi)
+                fa_F = class_mount.visual_cone(arr_fr[i+14],class_mount.coor_intr,class_mount.coor_resi)
+                delt_vc = np.abs((fa_F-fa_I) / 15)
+                lst_delt_vc.append(delt_vc)
+            
+    #returns one of the arrays: either head or body
+    if part == "head":
+        return np.array(lst_delt_vc)[:,0]
+    else: #body
+        return np.array(lst_delt_vc)[:,1]
+
+def vc_attack(class_attack,lst_frames,part):
+    
+    if lst_frames is None: #edge case: if a specific behavior wasn't in the video
+        return None
+    
+    lst_delt_vc = []
+    for lst in lst_frames:
+        arr_fr = class_attack.get_pre_onset(lst[0])
+        if arr_fr is not None: #edge case: if beginning of pre-transition is < 0
+            for i in [0,15]: #only iterate twice because pre-transition frames are always 30, thus 30/15=2
+                fa_I = class_attack.visual_cone(arr_fr[i],class_attack.coor_intr,class_attack.coor_resi)
+                fa_F = class_attack.visual_cone(arr_fr[i+14],class_attack.coor_intr,class_attack.coor_resi)
+                delt_vc = np.abs((fa_F-fa_I) / 15)
+                lst_delt_vc.append(delt_vc)
+
+        #returns one of the arrays: either head or body
+        if part == "head":
+            return np.array(lst_delt_vc)[:,0]
+        else: #body
+            return np.array(lst_delt_vc)[:,1]
+
+def vc_other(class_other,lst_frames,part):
+    
+    lst_delt_vc = []
+    
+    #edge case: if lst_frames is not nested but a list itself
+    if isinstance(lst_frames[0], np.int64): 
+        windows = compute_window(lst_frames)
+        for bout in windows:
+            fa_I = class_other.visual_cone(bout[0],class_other.coor_intr,class_other.coor_resi)
+            fa_F = class_other.visual_cone(bout[1],class_other.coor_intr,class_other.coor_resi)
+            delt_vc = (fa_F-fa_I) / 15
+            lst_delt_vc.append(delt_vc)
+            
+            #returns one of the arrays: either head or body
+            if part == "head":
+                return np.array(lst_delt_vc)[:,0]
+            else: #body
+                return np.array(lst_delt_vc)[:,1]
+
+    #get a list of 15-frame window, stored as tuples [begin, end of 15 frames]
+    for lst in lst_frames:
+        #if length of lst is greater than or equal to 15:
+        if len(lst) >= 15:
+            windows = compute_window(lst)
+            for bout in windows:
+                fa_I = class_other.visual_cone(bout[0],class_other.coor_intr,class_other.coor_resi)
+                fa_F = class_other.visual_cone(bout[1],class_other.coor_intr,class_other.coor_resi)
+                delt_vc = (fa_F-fa_I) / 15
+                lst_delt_vc.append(delt_vc)
+    
+    #returns one of the arrays: either head or body
+    if part == "head":
+        return np.array(lst_delt_vc)[:,0]
+    else: #body
+        return np.array(lst_delt_vc)[:,1]
+
+def vc_bins(vc_val,intervals):
+    
+    if vc_val is None:
+        return None
+    
+    #create an array of bins
+    #EXAMPLE: 0.0 ≤ x < 0.1 is 1 bin 
+    arr = np.round(np.linspace(0, 1, num=intervals+1),10)
+    
+    bins = []
+    
+    #for each interval, iterate all elements in s_matrix_val
+    for i in range(intervals):
+        bin_val = []
+        for j in vc_val:
+            #if binning the first 9 bins
+            if i < intervals-1:
+                if arr[i] <= j < arr[i+1]:
+                    bin_val.append(j)
+            #else binning the last bin
+            else:
+                if arr[i] <= j <= arr[i+1]:
+                    bin_val.append(j)
+        bins.append(bin_val)
+
+    return arr,bins
+
+def graph_vc_bins(vid_id,behavior,part):
+    
+    #compute s_matrix for three diff classes
+    mount = analyze_mount(str(vid_id),data_train,data_test)
+    attack = analyze_attack(str(vid_id),data_train,data_test)
+    other = analyze_other(str(vid_id),data_train,data_test)
+    
+    #get frame duration of behaviors
+    dur_mount = mount.filter_bout_seg()
+    dur_attack = attack.filter_bout_seg()
+    dur_other = other.get_other_frames()
+    
+    
+    #compute facing_angle rate
+    ma_mount = vc_mount(mount, dur_mount)
+    ma_attack = vc_attack(attack, dur_attack)
+    ma_other = vc_other(other,dur_other)
+    
+    '''
+    for i in [sm_mount,sm_attack,sm_other]: #XXX TO BE DELETED
+        data = np.array(i)  # your full computed values across all windows
+        print("min:", data.min(), "max:", data.max())
+    '''
+    
+    #bin each of them using s_matrix_bin()
+    bin_mount = vc_bins(ma_mount, 10)
+    bin_attack = vc_bins(ma_attack, 10)
+    bin_other = vc_bins(ma_other, 10)
+    
+    bin_sum = []
+    #take the same bin from all classes, compute probability
+    #probability of the behavior given a value range
+    for i in range(10):
+        curr_bin = []
+        for j in [bin_mount,bin_attack,bin_other]:
+            if j is not None:
+                #total number in a specific bin
+                curr_bin.extend(j[1][i])
+        bin_sum.append(curr_bin)
+        
+    prob = [] #probability of an indicated given a range of feature value
+    #e.g. given s-matrix range [0,0.1], how many of those values belong to mount/attack/other
+    #show bins given an indicated behavior
+    
+    plt.figure()
+    if behavior == "mount":
+        if bin_mount is None:
+            return print(f'No mount in video {vid_id}')
+        for i in range(10):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_mount[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'MOUNT: Video {vid_id}')
+        plt.xlabel("change in visual_cone over 15 frames")
+        plt.ylabel("P(MOUNT | Feature)")
+        plt.bar(bin_mount[0][:-1],prob,width=np.diff(bin_mount[0]),align='edge')
+
+    elif behavior == "attack":
+        if bin_attack is None:
+            return print(f'No attack in video {vid_id}')
+        for i in range(10):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_attack[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'ATTACK: Video {vid_id}')
+        plt.xlabel("change in visual_cone over 15 frames")
+        plt.ylabel("P(ATTACK | Feature)")
+        plt.bar(bin_attack[0][:-1],prob,width=np.diff(bin_attack[0]),align='edge')
+        
+    else: #behavior == "other"
+        for i in range(10):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_other[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'OTHER: Video {vid_id}')
+        plt.xlabel("change in visual_cone over 15 frames")
+        plt.ylabel("P(OTHER | Feature)")
         plt.bar(bin_other[0][:-1],prob,width=np.diff(bin_other[0]),align='edge')
     plt.show()
     
@@ -458,12 +1004,11 @@ if __name__ == "__main__":
     '''
 
     
-    for i in range (11,13):
+    for i in range (1,10):
         
-        graph_s_matrix_bin(i, "mount")
-        graph_s_matrix_bin(i, "attack")
-        graph_s_matrix_bin(i, "other")
-     
+        graph_fa_bins(i, "mount")
+        graph_fa_bins(i, "attack")
+        graph_fa_bins(i, "other")
     
     end = time.time()
     
