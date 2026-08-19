@@ -600,8 +600,6 @@ def graph_s_matrix_bin(vid_id,behavior):
 
 #NOTE - still use compute_window() from s_matrix
 
-#TODO - checks if max value of facing angle is greater than my bin view window
-
 def fa_mount(class_mount,lst_frames):
     
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
@@ -671,7 +669,7 @@ def fa_bins(fa_val,intervals):
     
     #create an array of bins
     #EXAMPLE: 0.0 ≤ x < 0.1 is 1 bin 
-    arr = np.round(np.linspace(0, 1, num=intervals+1),10)
+    arr = np.round(np.linspace(0, 30, num=intervals+1),10)
     
     bins = []
     
@@ -709,7 +707,7 @@ def graph_fa_bins(vid_id,behavior):
     ma_other = fa_other(other,dur_other)
     
     '''
-    for i in [sm_mount,sm_attack,sm_other]: #XXX TO BE DELETED
+    for i in [ma_mount,ma_attack,ma_other]: #XXX TO BE DELETED
         data = np.array(i)  # your full computed values across all windows
         print("min:", data.min(), "max:", data.max())
     '''
@@ -784,8 +782,6 @@ def graph_fa_bins(vid_id,behavior):
 
 #NOTE - still use compute_window() from s_matrix
 
-#TODO - need to separate vc_head from vc_body
-
 def vc_mount(class_mount,lst_frames,part):
     
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
@@ -796,8 +792,8 @@ def vc_mount(class_mount,lst_frames,part):
         arr_fr = class_mount.get_pre_onset(lst[0])
         if arr_fr is not None: #edge case: if beginning of pre-transition is < 0
             for i in [0,15]: #only iterate twice because pre-transition frames are always 30, thus 30/15=2
-                fa_I = class_mount.visual_cone(arr_fr[i],class_mount.coor_intr,class_mount.coor_resi)
-                fa_F = class_mount.visual_cone(arr_fr[i+14],class_mount.coor_intr,class_mount.coor_resi)
+                fa_I = np.array(class_mount.visual_cone(arr_fr[i],class_mount.coor_intr,class_mount.coor_resi))
+                fa_F = np.array(class_mount.visual_cone(arr_fr[i+14],class_mount.coor_intr,class_mount.coor_resi))
                 delt_vc = np.abs((fa_F-fa_I) / 15)
                 lst_delt_vc.append(delt_vc)
             
@@ -817,16 +813,16 @@ def vc_attack(class_attack,lst_frames,part):
         arr_fr = class_attack.get_pre_onset(lst[0])
         if arr_fr is not None: #edge case: if beginning of pre-transition is < 0
             for i in [0,15]: #only iterate twice because pre-transition frames are always 30, thus 30/15=2
-                fa_I = class_attack.visual_cone(arr_fr[i],class_attack.coor_intr,class_attack.coor_resi)
-                fa_F = class_attack.visual_cone(arr_fr[i+14],class_attack.coor_intr,class_attack.coor_resi)
+                fa_I = np.array(class_attack.visual_cone(arr_fr[i],class_attack.coor_intr,class_attack.coor_resi))
+                fa_F = np.array(class_attack.visual_cone(arr_fr[i+14],class_attack.coor_intr,class_attack.coor_resi))
                 delt_vc = np.abs((fa_F-fa_I) / 15)
                 lst_delt_vc.append(delt_vc)
-
-        #returns one of the arrays: either head or body
-        if part == "head":
-            return np.array(lst_delt_vc)[:,0]
-        else: #body
-            return np.array(lst_delt_vc)[:,1]
+                
+    #returns one of the arrays: either head or body
+    if part == "head":
+        return np.array(lst_delt_vc)[:,0]
+    else: #body
+        return np.array(lst_delt_vc)[:,1]
 
 def vc_other(class_other,lst_frames,part):
     
@@ -836,16 +832,16 @@ def vc_other(class_other,lst_frames,part):
     if isinstance(lst_frames[0], np.int64): 
         windows = compute_window(lst_frames)
         for bout in windows:
-            fa_I = class_other.visual_cone(bout[0],class_other.coor_intr,class_other.coor_resi)
-            fa_F = class_other.visual_cone(bout[1],class_other.coor_intr,class_other.coor_resi)
+            fa_I = np.array(class_other.visual_cone(bout[0],class_other.coor_intr,class_other.coor_resi))
+            fa_F = np.array(class_other.visual_cone(bout[1],class_other.coor_intr,class_other.coor_resi))
             delt_vc = (fa_F-fa_I) / 15
             lst_delt_vc.append(delt_vc)
             
-            #returns one of the arrays: either head or body
-            if part == "head":
-                return np.array(lst_delt_vc)[:,0]
-            else: #body
-                return np.array(lst_delt_vc)[:,1]
+        #returns one of the arrays: either head or body
+        if part == "head":
+            return np.array(lst_delt_vc)[:,0]
+        else: #body
+            return np.array(lst_delt_vc)[:,1]
 
     #get a list of 15-frame window, stored as tuples [begin, end of 15 frames]
     for lst in lst_frames:
@@ -853,8 +849,8 @@ def vc_other(class_other,lst_frames,part):
         if len(lst) >= 15:
             windows = compute_window(lst)
             for bout in windows:
-                fa_I = class_other.visual_cone(bout[0],class_other.coor_intr,class_other.coor_resi)
-                fa_F = class_other.visual_cone(bout[1],class_other.coor_intr,class_other.coor_resi)
+                fa_I = np.array(class_other.visual_cone(bout[0],class_other.coor_intr,class_other.coor_resi))
+                fa_F = np.array(class_other.visual_cone(bout[1],class_other.coor_intr,class_other.coor_resi))
                 delt_vc = (fa_F-fa_I) / 15
                 lst_delt_vc.append(delt_vc)
     
@@ -871,7 +867,7 @@ def vc_bins(vc_val,intervals):
     
     #create an array of bins
     #EXAMPLE: 0.0 ≤ x < 0.1 is 1 bin 
-    arr = np.round(np.linspace(0, 1, num=intervals+1),10)
+    arr = np.round(np.linspace(-0.30, 0.30, num=intervals+1),10)
     
     bins = []
     
@@ -905,9 +901,9 @@ def graph_vc_bins(vid_id,behavior,part):
     
     
     #compute facing_angle rate
-    ma_mount = vc_mount(mount, dur_mount)
-    ma_attack = vc_attack(attack, dur_attack)
-    ma_other = vc_other(other,dur_other)
+    ma_mount = vc_mount(mount, dur_mount,part)
+    ma_attack = vc_attack(attack, dur_attack,part)
+    ma_other = vc_other(other,dur_other,part)
     
     '''
     for i in [sm_mount,sm_attack,sm_other]: #XXX TO BE DELETED
@@ -945,7 +941,7 @@ def graph_vc_bins(vid_id,behavior,part):
             else:
                 prob.append(0)
         #find how many are mount given a value range
-        plt.title(f'MOUNT: Video {vid_id}')
+        plt.title(f'MOUNT: Video {vid_id}, {part}')
         plt.xlabel("change in visual_cone over 15 frames")
         plt.ylabel("P(MOUNT | Feature)")
         plt.bar(bin_mount[0][:-1],prob,width=np.diff(bin_mount[0]),align='edge')
@@ -959,7 +955,7 @@ def graph_vc_bins(vid_id,behavior,part):
             else:
                 prob.append(0)
         #find how many are mount given a value range
-        plt.title(f'ATTACK: Video {vid_id}')
+        plt.title(f'ATTACK: Video {vid_id}, {part}')
         plt.xlabel("change in visual_cone over 15 frames")
         plt.ylabel("P(ATTACK | Feature)")
         plt.bar(bin_attack[0][:-1],prob,width=np.diff(bin_attack[0]),align='edge')
@@ -971,7 +967,7 @@ def graph_vc_bins(vid_id,behavior,part):
             else:
                 prob.append(0)
         #find how many are mount given a value range
-        plt.title(f'OTHER: Video {vid_id}')
+        plt.title(f'OTHER: Video {vid_id}, {part}')
         plt.xlabel("change in visual_cone over 15 frames")
         plt.ylabel("P(OTHER | Feature)")
         plt.bar(bin_other[0][:-1],prob,width=np.diff(bin_other[0]),align='edge')

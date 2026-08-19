@@ -1135,7 +1135,7 @@ if __name__ == "__main__":
         print(f'Done w/ {i}')
     '''
     
-    for i in range(1,10):
+    for i in range(1,2):
         vid_other = analyze_other(str(i))
         vid_mount = analyze_mount(str(i))
         vid_attack = analyze_attack(str(i))
