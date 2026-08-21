@@ -12,6 +12,10 @@ import matplotlib.pyplot as plt
 import time
 from data_loader import data_train, data_test
 from feature_extract import (analyze_mount,analyze_attack,analyze_other)
+import sys
+print(sys.executable)
+import statsmodels.api as sm
+
 
 '''
 Binning features to see if any is redundant
@@ -30,9 +34,21 @@ This step is just: run correlations across all pairs, see which ones are suspici
 #Pair feature to examine correlations and flag redundancy
 
 def corr_analysis(data_train,data_test,vid_id,bout,graph=False):
+    '''
+    Returns lists of features to be compared for correlational analysis
     
+    Calls the function get_lst_for_corr_analysis(), extracts desired features, 
+    stores desired features at specific frames in lists, graph desired features
+    to compare them by Spearman correlational coefficient
+    
+    Parameters:
+        data_train: (dict) xy coordinates from both mice, from all videos for training
+        data_test:  (dict) xy coordinates from both mice, from all videos for testing
+        vid_id:     (int) video number/id
+        bout:       (str) behavior to be analyzed & extracted
+        graph:      (bool) graphs pairwise features 
+    '''
     vid_features = get_lst_for_corr_analysis(data_train,data_test,vid_id,bout)
-    print(vid_features)
     #if the indicated bout does not exist, skip this video
     if vid_features is None:
         return print(f'No {bout} exists in video {vid_id}')
@@ -86,21 +102,14 @@ def corr_analysis(data_train,data_test,vid_id,bout,graph=False):
                 
     return ([lst_corr_dist_angle,lst_pval_dist_angle],[lst_corr_main_feat,lst_pval_main_feat])
 
-#possible features comparison combos
-'''
-distance (resident nose & intruder head)     vs. angle_btw_lines(resi_nose,resi_neck,intr_centroid_head)
-distance (resident nose & intruder hip)      vs. angle_btw_lines(resi_nose,resi_neck,intr_hipL/R)*
-distance (resident nose & intruder centroid) vs. angle_btw_lines(resi_nose,resi_neck,intr_centroid_all)
-distance (resident nose & intruder tail)     vs. angle_btw_lines(resi_nose,resi_neck,intr_tail)
-
-["True_Head","True_Hip","True_Centroid","True_Tail","None"] vs. s_matrix/facing_angle/time_since/visual_cone
-s_matrix vs. facing_angle/time_since/visual_cone
-facing_angle vs. time_since/visual_cone
-time_since vs. visual_cone
-'''
-
-
 def spearman_rank_corr(var1,var2):
+    '''
+    Returns correlation coefficient & its p-value given two features
+    
+    Parameter:
+        var1: (list) a feature analyzed with var2
+        var2: (list) a feature analyzed with var1
+    '''
     
     statistic,pvalue = stats.spearmanr(var1,var2)
     
@@ -108,21 +117,30 @@ def spearman_rank_corr(var1,var2):
 
 
 def get_lst_for_corr_analysis(data_train,data_test,vid_id,bout):
+    '''
+    Returns a list of arrays that contain features to be compared:
+        distance (resident nose & intruder head)     vs. angle_btw_lines(resi_nose,resi_neck,intr_centroid_head)
+        distance (resident nose & intruder hip)      vs. angle_btw_lines(resi_nose,resi_neck,intr_hipL/R)*
+        distance (resident nose & intruder centroid) vs. angle_btw_lines(resi_nose,resi_neck,intr_centroid_all)
+        distance (resident nose & intruder tail)     vs. angle_btw_lines(resi_nose,resi_neck,intr_tail)
+
+        ["True_Head","True_Hip","True_Centroid","True_Tail","None"] vs. s_matrix/facing_angle/time_since/visual_cone
+        s_matrix vs. facing_angle/time_since/visual_cone
+        facing_angle vs. time_since/visual_cone
+        time_since vs. visual_cone
+        
+    Used by corr_analysis to provide correlation coefficients of features & p-value of the coefficients
     
+    Parameter:
+        data_train: (dict) xy coordinates from both mice, from all videos for training
+        data_test:  (dict) xy coordinates from both mice, from all videos for testing
+        vid_id:     (str) video number/id
+        bout:       (str) behavior to be analyzed & extracted
+    '''
     #analyze mount bouts
     if bout == "mount":
             
         vid_mount = analyze_mount(str(vid_id),data_train,data_test)
-            
-        # =============================================================================
-        #         #get all pre-bout frames (total = 30 * number of bouts)
-        #         lst_frames_vid = []
-        #         mount_gap = vid_mount.pre_mount()
-        #         for each in mount_gap:
-        #             frames_vid = vid_mount.get_pre_onset(each)
-        #             lst_frames_vid.append(frames_vid)
-        # =============================================================================
-            
         lst_frames_vid = []  
         mount_gap = vid_mount.filter_bout_seg() #numpy array (XX,2), where element is (beginning frame, end frame)
         
@@ -238,7 +256,15 @@ Nothing new here — just labeling what you already know how to do.
 #P({MOUNT,ATTACK,OTHER} | {True_Head,True_Centroid,True_Hip,True_Tail,None})
 
 def count_match(match,arr):
+    '''
+    Returns how many elements in arr matches the string in match
     
+    Used by cr_xxx(), or functions contact_region() binning 
+    
+    Parameter:
+        match: (str) a word that wished to be matched
+        arr:   (list) a list to be iterated to find how many elements match the word
+    '''
     count = 0
     for i in range(len(arr)):
             if arr[i] == match:
@@ -248,7 +274,16 @@ def count_match(match,arr):
 
 #get contact_region for specific behavior:
 def cr_mount(class_mount,lst_frames):
+    '''
+    Returns bins of contact regions {True_Head,True_Hip,True_Centroid,True_Tail,None},
+    given that the behavior is mount.
     
+    ie how many contact_regions occured before mount happened
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_mount
+        lst_frames:  (lst) list of durations when mount happened
+    '''
     regions = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
     
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
@@ -268,7 +303,17 @@ def cr_mount(class_mount,lst_frames):
     return bins
     
 def cr_attack(class_attack,lst_frames):
+    '''
+    Returns bins of contact regions {True_Head,True_Hip,True_Centroid,True_Tail,None},
+    given that the behavior is attack.
     
+    ie how many contact_regions occured before attack happened
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_attack
+        lst_frames:  (lst) list of durations when attack happened
+    
+    '''
     regions = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
     
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
@@ -281,14 +326,23 @@ def cr_attack(class_attack,lst_frames):
         if arr_fr is not None:
             for fr in arr_fr:
                 contacted = class_attack.contact_region(fr,class_attack.coor_resi,class_attack.coor_intr)
-            lst_contact.extend(contacted) #append the contacted region
+                lst_contact.append(contacted) #append the contacted region
     
     for each in regions:
         bins.append(count_match(each,lst_contact))
-        
     return bins
 
 def cr_other(class_other,lst_frames):
+    '''
+    Returns bins of contact regions {True_Head,True_Hip,True_Centroid,True_Tail,None},
+    given that the behavior is other.
+    
+    ie how many contact_regions occured before other behaviors happened
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_other
+        lst_frames:  (lst) list of durations when other behaviors happened
+    '''
     
     regions = ["True_Head","True_Hip","True_Centroid","True_Tail","None"]
     
@@ -311,6 +365,16 @@ def cr_other(class_other,lst_frames):
     return bins
 
 def graph_cr_bin(vid_id,behavior):
+    '''
+    Returns bins of probability of contact regions {True_Head,True_Hip,True_Centroid,True_Tail,None}
+    for a video, given a behavior
+    
+    ie P(mount/attack/other | regions): probaility of a behavior given a region is contacted
+    
+    Parameters:
+        vid_id: (int) video number/id
+        behavior: (str) behavior hopes to be binned
+    '''
     
     #get instance of mount, attack, other from a video
     mount = analyze_mount(str(vid_id),data_train,data_test)
@@ -327,10 +391,6 @@ def graph_cr_bin(vid_id,behavior):
     bins_mount = cr_mount(mount,dur_mount)
     bins_attack = cr_attack(attack,dur_attack)
     bins_other = cr_other(other,dur_other)
-    
-    print(bins_mount)
-    print(bins_attack)
-    print(bins_other)
     
     #get total of bin_mount/attack/other
     bin_sum = []
@@ -396,8 +456,10 @@ def graph_cr_bin(vid_id,behavior):
 
 def compute_window(lst):
     '''
-    lst is a frame
-    Returns a list of frame duration greater than or equal to 15
+    Returns a list of windows (duration) greater than or equal to 15 frames
+    
+    Parameter:
+        lst: (list) frames that are pre-bout transition frames (or other frames)
     '''
     lst_window = []
     #given an lst with length ≥ 15:
@@ -418,12 +480,14 @@ def compute_window(lst):
 
 def other_s_matrix_calc(class_other,lst_frames):
     '''
-    class_other is an instance of analyze_others()
-    lst_frames is a list of frame that belongs to non-mount and non-attack frames
-    Returns an array of change in s_matrix over 15 frames
+    Returns an array of change in s_matrix over 15 frames, given that other behaviors happened
+    
+    Parameters:
+        class_other: (class) an instance of analyze_other()
+        lst_frames: (list) a nested list of other frames; each list in lst_frames is
+        a sustained period of other behaviors.
     '''
     lst_delt_sm = []
-    
     #edge case: if lst_frames is not nested but a list itself
     if isinstance(lst_frames[0], np.int64): 
         windows = compute_window(lst_frames)
@@ -450,13 +514,16 @@ def other_s_matrix_calc(class_other,lst_frames):
 
 def m_a_s_matrix_calc(class_ma,lst_frames):
     '''
-    class_ma is an instance of either analyze_mount() or analyze_attack()
-    lst_frames is a nested list of frame that belongs to mount and attack frames
-    Returns an array of change in s_matrix over 15 frames
+    Returns an array of change in s_matrix over 15 frames, given that mount or attack behaviors happened
+    
+    Parameters:
+        class_other: (class) an instance of analyze_other()
+        lst_frames: (list) a nested list of mount or attack frames; each list in lst_frames 
+        is a sustained period of mount or attack behaviors.
     '''
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
         return None
-    
+
     lst_delt_ma = []
     for lst in lst_frames:
         arr_fr = class_ma.get_pre_onset(lst[0])
@@ -464,19 +531,21 @@ def m_a_s_matrix_calc(class_ma,lst_frames):
             for i in [0,15]: #only iterate twice because pre-transition frames are always 30, thus 30/15=2
                 ma_I = class_ma.s_matrix(arr_fr[i],class_ma.coor_intr,class_ma.coor_resi)
                 ma_F = class_ma.s_matrix(arr_fr[i+14],class_ma.coor_intr,class_ma.coor_resi)
-                delt_ma = np.abs((ma_F-ma_I) / 15)
+                delt_ma = (ma_F-ma_I) / 15
                 lst_delt_ma.append(delt_ma)
 
     return lst_delt_ma
 
 def s_matrix_bin(s_matrix_val,intervals):
     '''
-    arr is the array that contains s-matrix throughouth the video
-    intervals wished to be implemented (ie how many bins to put)
+    Returns an array of feature vectors & bins containing actual features
     
-    equal width binning
+    Parameters:
+        s_matrix_val: (array) elements are change in s_matrix value over 15 frames
+        intervals: (int) indicates how many bins to be divided
     
-    function inspired by "Binning in Data Mining" in Geeks for Geeks
+    #NOTE: this is an equal width binning function 
+    inspired by "Binning in Data Mining" in Geeks for Geeks
     '''
     
     if s_matrix_val is None:
@@ -484,7 +553,7 @@ def s_matrix_bin(s_matrix_val,intervals):
     
     #create an array of bins
     #EXAMPLE: 0.0 ≤ x < 0.1 is 1 bin 
-    arr = np.round(np.linspace(0, 0.06, num=intervals+1),10)
+    arr = np.round(np.linspace(-0.05, 0.06, num=intervals+1),10)
     
     bins = []
     
@@ -504,9 +573,15 @@ def s_matrix_bin(s_matrix_val,intervals):
 
     return arr,bins
 
-def graph_s_matrix_bin(vid_id,behavior):
+def graph_s_matrix_bin(vid_id,behavior,intervals=20):
     '''
-    given all s_matrix values from three diff classes, bin them
+    Returns an array of probailities of an action being a behavior
+    given feature vectors being binned
+    
+    Parameters:
+        vid_id: (int) video number/id
+        behavior: (str) a behavior {mount,attack,other} to be binned
+        intervals: (int) number of bins to be used
     '''
     
     #compute s_matrix for three diff classes
@@ -531,14 +606,14 @@ def graph_s_matrix_bin(vid_id,behavior):
     '''
     
     #bin each of them using s_matrix_bin()
-    bin_mount = s_matrix_bin(sm_mount, 10)
-    bin_attack = s_matrix_bin(sm_attack, 10)
-    bin_other = s_matrix_bin(sm_other, 10)
+    bin_mount = s_matrix_bin(sm_mount, intervals)
+    bin_attack = s_matrix_bin(sm_attack, intervals)
+    bin_other = s_matrix_bin(sm_other, intervals)
     
     bin_sum = []
     #take the same bin from all classes, compute probability
     #probability of the behavior given a value range
-    for i in range(10):
+    for i in range(intervals):
         curr_bin = []
         for j in [bin_mount,bin_attack,bin_other]:
             if j is not None:
@@ -554,7 +629,7 @@ def graph_s_matrix_bin(vid_id,behavior):
     if behavior == "mount":
         if bin_mount is None:
             return print(f'No mount in video {vid_id}')
-        for i in range(10):
+        for i in range(intervals):
             if len(bin_sum[i]) != 0:
                 prob.append(len(bin_mount[1][i])/len(bin_sum[i]))
             else:
@@ -563,12 +638,12 @@ def graph_s_matrix_bin(vid_id,behavior):
         plt.title(f'MOUNT: Video {vid_id}')
         plt.xlabel("change in sym_ratio over 15 frames")
         plt.ylabel("P(MOUNT | Feature)")
-        plt.bar(bin_mount[0][:-1],prob,width=np.diff(bin_mount[0]),align='edge')
+        plt.bar(bin_mount[0][:-1],prob,width=np.diff(bin_mount[0]),align='edge') #equal width
 
     elif behavior == "attack":
         if bin_attack is None:
             return print(f'No attack in video {vid_id}')
-        for i in range(10):
+        for i in range(intervals):
             if len(bin_sum[i]) != 0:
                 prob.append(len(bin_attack[1][i])/len(bin_sum[i]))
             else:
@@ -580,7 +655,7 @@ def graph_s_matrix_bin(vid_id,behavior):
         plt.bar(bin_attack[0][:-1],prob,width=np.diff(bin_attack[0]),align='edge')
         
     else: #behavior == "other"
-        for i in range(10):
+        for i in range(intervals):
             if len(bin_sum[i]) != 0:
                 prob.append(len(bin_other[1][i])/len(bin_sum[i]))
             else:
@@ -601,6 +676,14 @@ def graph_s_matrix_bin(vid_id,behavior):
 #NOTE - still use compute_window() from s_matrix
 
 def fa_mount(class_mount,lst_frames):
+    '''
+    Returns an list of change in resident's facing angle to intruders 
+    over 15 frames for mount behaviors
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_mount()
+        lst_frames: (list) a nested list containing all mount bouts
+    '''
     
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
         return None
@@ -618,6 +701,14 @@ def fa_mount(class_mount,lst_frames):
     return lst_delt_fa
 
 def fa_attack(class_attack,lst_frames):
+    '''
+    Returns an list of change in resident's facing angle to intruders 
+    over 15 frames for attack behaviors
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_attack()
+        lst_frames: (list) a nested list containing all attack bouts
+    '''
     
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
         return None
@@ -635,6 +726,14 @@ def fa_attack(class_attack,lst_frames):
     return lst_delt_fa
 
 def fa_other(class_other,lst_frames):
+    '''
+    Returns an list of change in resident's facing angle to intruders 
+    over 15 frames for other behaviors
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_other()
+        lst_frames: (list) a nested list containing all other bouts
+    '''
     
     lst_delt_fa = []
     
@@ -663,13 +762,23 @@ def fa_other(class_other,lst_frames):
     return lst_delt_fa
 
 def fa_bins(fa_val,intervals):
+    '''
+    Returns an array of feature vectors & bins containing actual features
+    
+    Parameters:
+        fa_val: (array) elements are change in facing_angle value over 15 frames
+        intervals: (int) indicates how many bins to be divided
+    
+    #NOTE: this is an equal width binning function 
+    inspired by "Binning in Data Mining" in Geeks for Geeks
+    '''
     
     if fa_val is None:
         return None
     
     #create an array of bins
     #EXAMPLE: 0.0 ≤ x < 0.1 is 1 bin 
-    arr = np.round(np.linspace(0, 30, num=intervals+1),10)
+    arr = np.round(np.linspace(0, 20, num=intervals+1),10)
     
     bins = []
     
@@ -690,6 +799,15 @@ def fa_bins(fa_val,intervals):
     return arr,bins
 
 def graph_fa_bins(vid_id,behavior):
+    '''
+    Returns an array of probailities of an action being a behavior
+    given feature vectors being binned
+    
+    Parameters:
+        vid_id: (int) video number/id
+        behavior: (str) a behavior {mount,attack,other} to be binned
+        intervals: (int) number of bins to be used
+    '''
     
     #compute s_matrix for three diff classes
     mount = analyze_mount(str(vid_id),data_train,data_test)
@@ -783,6 +901,14 @@ def graph_fa_bins(vid_id,behavior):
 #NOTE - still use compute_window() from s_matrix
 
 def vc_mount(class_mount,lst_frames,part):
+    '''
+    Returns an list of change in resident's visual cone to intruders 
+    over 15 frames for mount behaviors
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_mount()
+        lst_frames: (list) a nested list containing all mount bouts
+    '''
     
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
         return None
@@ -804,6 +930,14 @@ def vc_mount(class_mount,lst_frames,part):
         return np.array(lst_delt_vc)[:,1]
 
 def vc_attack(class_attack,lst_frames,part):
+    '''
+    Returns an list of change in resident's visual cone to intruders 
+    over 15 frames for attack behaviors
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_attack()
+        lst_frames: (list) a nested list containing all attack bouts
+    '''
     
     if lst_frames is None: #edge case: if a specific behavior wasn't in the video
         return None
@@ -825,6 +959,14 @@ def vc_attack(class_attack,lst_frames,part):
         return np.array(lst_delt_vc)[:,1]
 
 def vc_other(class_other,lst_frames,part):
+    '''
+    Returns an list of change in resident's visual cone to intruders 
+    over 15 frames for other behaviors
+    
+    Parameters:
+        class_mount: (class) an instance of analyze_other()
+        lst_frames: (list) a nested list containing all other bouts
+    '''
     
     lst_delt_vc = []
     
@@ -861,6 +1003,16 @@ def vc_other(class_other,lst_frames,part):
         return np.array(lst_delt_vc)[:,1]
 
 def vc_bins(vc_val,intervals):
+    '''
+    Returns an array of feature vectors & bins containing actual features
+    
+    Parameters:
+        fa_val: (array) elements are change in visual_cone value over 15 frames
+        intervals: (int) indicates how many bins to be divided
+    
+    #NOTE: this is an equal width binning function 
+    inspired by "Binning in Data Mining" in Geeks for Geeks
+    '''
     
     if vc_val is None:
         return None
@@ -888,6 +1040,15 @@ def vc_bins(vc_val,intervals):
     return arr,bins
 
 def graph_vc_bins(vid_id,behavior,part):
+    '''
+    Returns an array of probailities of an action being a behavior
+    given feature vectors being binned
+    
+    Parameters:
+        vid_id: (int) video number/id
+        behavior: (str) a behavior {mount,attack,other} to be binned
+        intervals: (int) number of bins to be used
+    '''
     
     #compute s_matrix for three diff classes
     mount = analyze_mount(str(vid_id),data_train,data_test)
@@ -975,36 +1136,307 @@ def graph_vc_bins(vid_id,behavior,part):
     
     return prob
 
+# =============================================================================
+# Combining bins across videos
+# =============================================================================
+
+def cr_graph_combine(vid_id_range,behavior,intervals=20):
+    '''
+    Binning for contact_region()
+    '''
+    
+    lst_bins_mount = np.zeros(5)
+    lst_bins_attack = np.zeros(5)
+    lst_bins_other = np.zeros(5)
+    
+    #do this for each video
+    for i in range (vid_id_range[0],vid_id_range[1]):
+        #find each behavior's bins
+        #compute s_matrix for three diff classes
+        mount = analyze_mount(str(i),data_train,data_test)
+        attack = analyze_attack(str(i),data_train,data_test)
+        other = analyze_other(str(i),data_train,data_test)
+        
+        #get frame duration of behaviors
+        dur_mount = mount.filter_bout_seg()
+        dur_attack = attack.filter_bout_seg()
+        dur_other = other.get_other_frames()
+        
+        #bin behaviors by {True_Head,True_Centroid,True_Hip,True_Tail,None}
+        bins_mount = cr_mount(mount,dur_mount)
+        bins_attack = cr_attack(attack,dur_attack)
+        print(bins_attack)
+        bins_other = cr_other(other,dur_other)
+        
+        #put them in separate lists
+        if bins_mount is not None:  
+            lst_bins_mount = np.array(bins_mount) + lst_bins_mount
+        if bins_attack is not None:
+            lst_bins_attack = np.array(bins_attack) + lst_bins_attack
+        if bins_other is not None:
+            lst_bins_other = np.array(bins_other) + lst_bins_other
+    
+    #take the same bin from all classes, compute probability
+    #probability of the behavior given a value range
+    bin_sum = lst_bins_mount + lst_bins_attack + lst_bins_other
+    
+    prob = [] #probability of an indicated given a range of feature value
+    #e.g. given s-matrix range [0,0.1], how many of those s-matrix values belong to mount/attack/other
+    #show bins given an indicated behavior
+    
+    plt.figure()
+    if behavior == "mount":
+        if bins_mount is None:
+            return print(f'No mount in videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        for i in range(5):
+            if bin_sum[i] != 0:
+                prob.append(lst_bins_mount[i]/bin_sum[i])
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'MOUNT: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in sym_ratio over 15 frames")
+        plt.ylabel("P(MOUNT | Feature)")
+        plt.bar(["True_Head","True_Hip","True_Centroid","True_Tail","None"],prob,align='edge') #equal width
+
+    elif behavior == "attack":
+        if bins_attack is None:
+            return print(f'No attack in videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        for i in range(5):
+            if bin_sum[i] != 0:
+                prob.append(lst_bins_attack[i]/bin_sum[i])
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'ATTACK: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in sym_ratio over 15 frames")
+        plt.ylabel("P(ATTACK | Feature)")
+        plt.bar(["True_Head","True_Hip","True_Centroid","True_Tail","None"],prob,align='edge') #equal width
+        print(lst_bins_attack)
+        print(bin_sum)
+    else: #behavior == "other"
+        for i in range(5):
+            if bin_sum[i] != 0:
+                prob.append(lst_bins_other[i]/bin_sum[i])
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'OTHER: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in sym_ratio over 15 frames")
+        plt.ylabel("P(OTHER | Feature)")
+        plt.bar(["True_Head","True_Hip","True_Centroid","True_Tail","None"],prob,align='edge') #equal width
+    plt.show()
+    
+    return bin_sum
+
+def sm_graph_combine(vid_id_range,behavior,intervals=20):
+    '''
+    Binning for s_matrix
+    '''
+    
+    lst_bins_mount = []
+    lst_bins_attack = []
+    lst_bins_other = []
+    
+    #do this for each video
+    for i in range (vid_id_range[0],vid_id_range[1]):
+        #find each behavior's bins
+        #compute s_matrix for three diff classes
+        mount = analyze_mount(str(i),data_train,data_test)
+        attack = analyze_attack(str(i),data_train,data_test)
+        other = analyze_other(str(i),data_train,data_test)
+        
+        #get frame duration of behaviors
+        dur_mount = mount.filter_bout_seg()
+        dur_attack = attack.filter_bout_seg()
+        dur_other = other.get_other_frames()
+        
+        #compute s_matrix rate
+        ma_mount = m_a_s_matrix_calc(mount, dur_mount)
+        ma_attack = m_a_s_matrix_calc(attack, dur_attack)
+        ma_other = other_s_matrix_calc(other,dur_other)
+        
+        #put them in separate lists
+        lst_bins_mount.extend(ma_mount if ma_mount is not None else [])
+        lst_bins_attack.extend(ma_attack if ma_attack is not None else[])
+        lst_bins_other.extend(ma_other if ma_other is not None else [])
+
+    #binning features from given videos
+    bin_mount = s_matrix_bin(lst_bins_mount, intervals)
+    bin_attack = s_matrix_bin(lst_bins_attack, intervals)
+    bin_other = s_matrix_bin(lst_bins_other, intervals)
+    
+    bin_sum = []
+    #take the same bin from all classes, compute probability
+    #probability of the behavior given a value range
+    for i in range(intervals):
+        curr_bin = []
+        for j in [bin_mount,bin_attack,bin_other]:
+            if j is not None:
+                #total number in a specific bin
+                curr_bin.extend(j[1][i])
+        bin_sum.append(curr_bin)
+    
+    prob = [] #probability of an indicated given a range of feature value
+    #e.g. given s-matrix range [0,0.1], how many of those s-matrix values belong to mount/attack/other
+    #show bins given an indicated behavior
+    
+    plt.figure()
+    if behavior == "mount":
+        if bin_mount is None:
+            return print(f'No mount in videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        for i in range(intervals):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_mount[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'MOUNT: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in sym_ratio over 15 frames")
+        plt.ylabel("P(MOUNT | Feature)")
+        plt.bar(bin_mount[0][:-1],prob,width=np.diff(bin_mount[0]),align='edge') #equal width
+
+    elif behavior == "attack":
+        if bin_attack is None:
+            return print(f'No attack in videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        for i in range(intervals):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_attack[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'ATTACK: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in sym_ratio over 15 frames")
+        plt.ylabel("P(ATTACK | Feature)")
+        plt.bar(bin_attack[0][:-1],prob,width=np.diff(bin_attack[0]),align='edge')
+        
+    else: #behavior == "other"
+        for i in range(intervals):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_other[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'OTHER: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in sym_ratio over 15 frames")
+        plt.ylabel("P(OTHER | Feature)")
+        plt.bar(bin_other[0][:-1],prob,width=np.diff(bin_other[0]),align='edge')
+    plt.show()
+    
+    return bin_sum
+
+def fa_graph_combine(vid_id_range,behavior,intervals=20):
+    '''
+    Binning for facing_angle
+    '''
+    
+    lst_bins_mount = []
+    lst_bins_attack = []
+    lst_bins_other = []
+    
+    #do this for each video
+    for i in range (vid_id_range[0],vid_id_range[1]):
+        #find each behavior's bins
+        #compute s_matrix for three diff classes
+        mount = analyze_mount(str(i),data_train,data_test)
+        attack = analyze_attack(str(i),data_train,data_test)
+        other = analyze_other(str(i),data_train,data_test)
+        
+        #get frame duration of behaviors
+        dur_mount = mount.filter_bout_seg()
+        dur_attack = attack.filter_bout_seg()
+        dur_other = other.get_other_frames()
+        
+        #compute facing_angle rate
+        ma_mount = fa_mount(mount, dur_mount)
+        ma_attack = fa_attack(attack, dur_attack)
+        ma_other = fa_other(other,dur_other)
+        
+        #put them in separate lists
+        lst_bins_mount.extend(ma_mount if ma_mount is not None else [])
+        lst_bins_attack.extend(ma_attack if ma_attack is not None else[])
+        lst_bins_other.extend(ma_other if ma_other is not None else [])
+
+    #binning features from given videos
+    bin_mount = s_matrix_bin(lst_bins_mount, intervals)
+    bin_attack = s_matrix_bin(lst_bins_attack, intervals)
+    bin_other = s_matrix_bin(lst_bins_other, intervals)
+    
+    bin_sum = []
+    #take the same bin from all classes, compute probability
+    #probability of the behavior given a value range
+    for i in range(intervals):
+        curr_bin = []
+        for j in [bin_mount,bin_attack,bin_other]:
+            if j is not None:
+                #total number in a specific bin
+                curr_bin.extend(j[1][i])
+        bin_sum.append(curr_bin)
+    
+    prob = [] #probability of an indicated given a range of feature value
+    #e.g. given s-matrix range [0,0.1], how many of those s-matrix values belong to mount/attack/other
+    #show bins given an indicated behavior
+    
+    plt.figure()
+    if behavior == "mount":
+        if bin_mount is None:
+            return print(f'No mount in videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        for i in range(intervals):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_mount[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'MOUNT: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in facing_angle over 15 frames")
+        plt.ylabel("P(MOUNT | Feature)")
+        plt.bar(bin_mount[0][:-1],prob,width=np.diff(bin_mount[0]),align='edge') #equal width
+
+    elif behavior == "attack":
+        if bin_attack is None:
+            return print(f'No attack in videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        for i in range(intervals):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_attack[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'ATTACK: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in facing_angle over 15 frames")
+        plt.ylabel("P(ATTACK | Feature)")
+        plt.bar(bin_attack[0][:-1],prob,width=np.diff(bin_attack[0]),align='edge')
+        
+    else: #behavior == "other"
+        for i in range(intervals):
+            if len(bin_sum[i]) != 0:
+                prob.append(len(bin_other[1][i])/len(bin_sum[i]))
+            else:
+                prob.append(0)
+        #find how many are mount given a value range
+        plt.title(f'OTHER: Videos {vid_id_range[0]}-{vid_id_range[1]-1}')
+        plt.xlabel("change in facing_angle over 15 frames")
+        plt.ylabel("P(OTHER | Feature)")
+        plt.bar(bin_other[0][:-1],prob,width=np.diff(bin_other[0]),align='edge')
+    plt.show()
+    
+    return bin_sum
+
+def vc_graph_combine(vid_id_range,behavior,intervals,part):
+    
+    return None
+
 #probability of the behavior given a value range
 if __name__ == "__main__":
     
     start = time.time()
-    
-    #set up
-    vid1_mount = analyze_mount("1", data_train, data_test)
-    vid1_attack = analyze_attack("1", data_train, data_test)
-    vid1_other = analyze_other("1", data_train, data_test)
-    
-    '''
-    vid1_mount_stats = vid1_mount.stats_arr(False)
-    vid1_attack_stats = vid1_attack.stats_arr(False) #None
-    vid1_other_stats = vid1_other.stats_arr(False)
-    
-    lst = [vid1_mount,vid1_attack,vid1_other]
-        
-    vid1_sm = [np.reshape(vid1_mount_stats[1,:,:],-1),vid1_other_stats[1,:]]
-    print(np.shape(vid1_sm[0]),np.shape(vid1_sm[1]))
-    
-    x = s_matrix_bin(vid1_sm[0], 10)
-    assert np.shape(vid1_sm[0])[0] == len(np.concatenate(x[1]))
-    '''
 
+    #for i in range (1,10):   
+    #    graph_s_matrix_bin(i, "attack")
     
-    for i in range (1,10):
-        
-        graph_fa_bins(i, "mount")
-        graph_fa_bins(i, "attack")
-        graph_fa_bins(i, "other")
+    #y = graph_cr_bin(70,"attack")
+    
+    #x = cr_graph_combine([1,71],"mount",10)
+    #z = fa_graph_combine([1,71],"other",10)
     
     end = time.time()
     
@@ -1018,6 +1450,20 @@ Equation B (with an interaction term): drift = b0 + b1*hip_contact + b2*sym_rati
 "Additive" means each feature just adds its own independent contribution. 
 "Interaction term" (the hip_contact * sym_ratio_change part) means the effect of one feature depends on the value of another — this is how you'd formally represent whatever you found in step 3's 2D grid, if anything looked interesting there.
 You then fit each candidate equation to your data (find the best-fitting b0, b1, b2... values) and need a way to decide which equation is actually better, not just which one fits your existing data best (a model with more terms will always fit existing data at least as well, even if the extra terms are noise).
+
+
+
+# x = raw Δsym_ratio per trial, y = mount/no-mount (0/1), one row per trial
+X_linear = sm.add_constant(x)
+model_linear = sm.Logit(y, X_linear).fit()
+
+X_quad = sm.add_constant(np.column_stack([x, x**2]))
+model_quad = sm.Logit(y, X_quad).fit()
+
+# likelihood ratio test: does the quadratic term earn its extra parameter?
+lr_stat = 2 * (model_quad.llf - model_linear.llf)
+# compare lr_stat to chi-square with 1 df, or just compare model_linear.aic vs model_quad.aic
+
 '''
 
     
